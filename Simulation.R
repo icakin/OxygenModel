@@ -1,30 +1,11 @@
 ############################################################
-# README – Synthetic-data validation for the O₂ growth–respiration model
+# README – Synthetic-data validation for OUR O₂ model
 #
-# This script:
-#   1) Uses the same normalised O₂ model as the main analysis:
-#        O2_norm(t) = O2_0 + (resp_tot / r) * (1 - exp(r * t))
-#      where resp_tot = (R * N0) / O2_ref.
-#   2) Generates synthetic dissolved-oxygen time series across grids of:
-#        - growth rate r
-#        - per-cell respiration R
-#        - noise level (Gaussian SD)
-#        - sampling interval (dt)
-#        - total duration (minutes)
-#   3) Adds noise, mimics trimming to the main depletion phase, and refits the
-#      same nlsLM model used for empirical data to recover r and R.
-#   4) Quantifies parameter recovery (bias, RMSE, relative error, pseudo-R²)
-#      as a function of noise, sampling frequency, and time-series length.
-#   5) Produces parameter-recovery plots (true vs estimated r and R) for a
-#      representative “realistic” scenario.
+# Model (normalised):
+#   O2_norm(t) = O2_0 + (K / r) * (1 - exp(r * t))
 #
-# Outputs:
-#   - Tables (in `Tables/`):
-#       * synthetic_parameter_recovery_results.csv
-#       * synthetic_parameter_recovery_summary.csv
-#   - Plots (in `plots/`):
-#       * Fig_S2_synthetic_param_recovery_combined.pdf
-#       * Fig_S2_synthetic_param_recovery_combined.png
+# Relationship to per-cell respiration (mg O2 cell^-1 min^-1):
+#   K = (R * N0) / O2_ref   =>   R = K * O2_ref / N0
 ############################################################
 
 # ---- 0. Libraries & project paths -------------------------------------
@@ -40,11 +21,10 @@ dir.create(data_dir,   showWarnings = FALSE, recursive = TRUE)
 dir.create(plots_dir,  showWarnings = FALSE, recursive = TRUE)
 dir.create(tables_dir, showWarnings = FALSE, recursive = TRUE)
 
-# ---- 1. Model function (same as in manuscript, normalised form) -------
-# O2_norm(t) = O2_0 + (resp_tot / r) * (1 - exp(r * t))
-# where resp_tot = (R * N0) / O2_ref  (dimensionless)
-resp_model_norm <- function(r, resp_tot, t, O2_0) {
-  O2_0 + (resp_tot / r) * (1 - exp(r * t))
+# ---- 1. Model function (OUR model, normalised form) --------------------
+# O2_norm(t) = O2_0 + (K / r) * (1 - exp(r * t))
+o2_model_norm <- function(r, K, t, O2_0) {
+  O2_0 + (K / r) * (1 - exp(r * t))
 }
 
 # ---- 2. True parameter ranges & simulation design ----------------------
@@ -54,7 +34,8 @@ set.seed(123)  # reproducible
 r_vals <- c(0.01, 0.02, 0.035)          # min^-1  (growth rates)
 R_vals <- c(2e-12, 5e-12, 8e-12)        # mg O2 cell^-1 min^-1  (per-cell respiration)
 
-N0_true     <- 1e9   # cells L^-1 (scale only; used to define resp_tot_true)
+# These just set the scale to convert between K and R
+N0_true     <- 1e9   # cells L^-1
 O2_ref_true <- 1     # mg O2 L^-1, reference O2 for normalisation
 O2_0_true   <- 1     # initial normalised O2
 
@@ -69,19 +50,19 @@ simulate_and_fit <- function(r_true, R_true, N0_true,
                              O2_0_true, O2_ref_true,
                              noise_sd, dt, duration) {
   
-  # True dimensionless total respiration scaling:
-  # resp_tot_true = (R * N0) / O2_ref
-  resp_tot_true <- (R_true * N0_true) / O2_ref_true
+  # Convert per-cell respiration R to model parameter K:
+  # K_true = (R * N0) / O2_ref
+  K_true <- (R_true * N0_true) / O2_ref_true
   
   # full time grid
   t_full <- seq(0, duration, by = dt)
   
   # noise-free normalised O2
-  O2_true_full <- resp_model_norm(
-    r        = r_true,
-    resp_tot = resp_tot_true,
-    t        = t_full,
-    O2_0     = O2_0_true
+  O2_true_full <- o2_model_norm(
+    r    = r_true,
+    K    = K_true,
+    t    = t_full,
+    O2_0 = O2_0_true
   )
   
   # mimic trimming: stop when O2 has dropped to 40% of start, if reached
@@ -105,17 +86,18 @@ simulate_and_fit <- function(r_true, R_true, N0_true,
   )
   
   # starting values (not equal to truth)
-  r_start        <- r_true * runif(1, 0.5, 1.5)
-  R_start        <- R_true * runif(1, 0.5, 1.5)
-  resp_tot_start <- (R_start * N0_true) / O2_ref_true
+  r_start <- r_true * runif(1, 0.5, 1.5)
+  
+  R_start <- R_true * runif(1, 0.5, 1.5)
+  K_start <- (R_start * N0_true) / O2_ref_true
   
   fit <- tryCatch(
     nlsLM(
-      Oxygen_norm ~ resp_model_norm(r, resp_tot, Time, O2_0),
+      Oxygen_norm ~ o2_model_norm(r, K, Time, O2_0),
       data    = df_sim,
-      start   = list(r = r_start, resp_tot = resp_tot_start, O2_0 = 1),
-      lower   = c(r = 1e-4,  resp_tot = 1e-5, O2_0 = 0.8),
-      upper   = c(r = 0.1,   resp_tot = 0.1,  O2_0 = 1.2),
+      start   = list(r = r_start, K = K_start, O2_0 = 1),
+      lower   = c(r = 1e-4,  K = 1e-7, O2_0 = 0.8),
+      upper   = c(r = 0.1,   K = 0.5,  O2_0 = 1.2),
       control = nls.lm.control(maxiter = 300)
     ),
     error = function(e) NULL
@@ -124,12 +106,14 @@ simulate_and_fit <- function(r_true, R_true, N0_true,
   if (is.null(fit)) {
     return(tibble(
       r_true    = r_true,
+      K_true    = K_true,
       R_true    = R_true,
       noise_sd  = noise_sd,
       dt        = dt,
       duration  = duration,
       converged = FALSE,
       r_est     = NA_real_,
+      K_est     = NA_real_,
       R_est     = NA_real_,
       O2_0_est  = NA_real_,
       pseudo_R2 = NA_real_
@@ -141,22 +125,24 @@ simulate_and_fit <- function(r_true, R_true, N0_true,
   pseudo_R2 <- 1 - sum((df_sim$Oxygen_norm - pred)^2) /
     sum((df_sim$Oxygen_norm - mean(df_sim$Oxygen_norm))^2)
   
-  coefs         <- coef(fit)
-  r_est         <- coefs[["r"]]
-  resp_tot_est  <- coefs[["resp_tot"]]
+  coefs <- coef(fit)
+  r_est <- coefs[["r"]]
+  K_est <- coefs[["K"]]
   
   # Map back to per-cell respiration R:
-  # resp_tot = (R * N0) / O2_ref  =>  R_est = resp_tot_est * O2_ref_true / N0_true
-  R_est <- resp_tot_est * O2_ref_true / N0_true
+  # R_est = K_est * O2_ref_true / N0_true
+  R_est <- K_est * O2_ref_true / N0_true
   
   tibble(
     r_true    = r_true,
+    K_true    = K_true,
     R_true    = R_true,
     noise_sd  = noise_sd,
     dt        = dt,
     duration  = duration,
     converged = TRUE,
     r_est     = r_est,
+    K_est     = K_est,
     R_est     = R_est,
     O2_0_est  = coefs[["O2_0"]],
     pseudo_R2 = pseudo_R2
@@ -198,8 +184,10 @@ sim_summary <- sim_results %>%
   filter(converged) %>%
   mutate(
     r_error   = r_est - r_true,
+    K_error   = K_est - K_true,
     R_error   = R_est - R_true,
     r_rel_err = (r_est - r_true) / r_true,
+    K_rel_err = (K_est - K_true) / K_true,
     R_rel_err = (R_est - R_true) / R_true
   ) %>%
   group_by(noise_sd, dt, duration) %>%
@@ -207,9 +195,12 @@ sim_summary <- sim_results %>%
     n_fits     = n(),
     r_bias     = mean(r_error, na.rm = TRUE),
     r_rmse     = sqrt(mean(r_error^2, na.rm = TRUE)),
+    K_bias     = mean(K_error, na.rm = TRUE),
+    K_rmse     = sqrt(mean(K_error^2, na.rm = TRUE)),
     R_bias     = mean(R_error, na.rm = TRUE),
     R_rmse     = sqrt(mean(R_error^2, na.rm = TRUE)),
     r_rel_bias = mean(r_rel_err, na.rm = TRUE),
+    K_rel_bias = mean(K_rel_err, na.rm = TRUE),
     R_rel_bias = mean(R_rel_err, na.rm = TRUE),
     mean_R2    = mean(pseudo_R2, na.rm = TRUE),
     .groups    = "drop"
