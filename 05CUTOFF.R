@@ -7,15 +7,15 @@
 #        - Removes very flat / noisy series
 #        - Saves the trimmed trajectories and a log of skipped series
 #
-#   2) Fits the normalised O₂ growth–respiration model with N₀ fixed to 1:
-#        O2_norm(t) = O2_0 + (resp_tot / r) * (1 - exp(r * t))
+#   2) Fits OUR normalised O₂ model with N₀ fixed to 1:
+#        O2_norm(t) = O2_0 + (K / r) * (1 - exp(r * t))
 #      for each Taxon × Replicate, on the full trimmed window
-#      → returns r (min⁻¹), resp_tot, O₂₀, O₂_ref and QC metrics.
+#      → returns r (min⁻¹), K, O₂₀, O₂_ref and QC metrics.
 #
 #   3) Reviewer sensitivity test (O₂_norm ≥ 0.5 only):
 #        - Re-fits the same model using only points with O₂_norm ≥ 0.5
-#        - Compares r and resp_tot between the two fits
-#        - Summarises ratios and differences (r₀.₅ / r, R₀.₅ / R)
+#        - Compares r and K between the two fits
+#        - Summarises ratios and differences (r₀.₅ / r, K₀.₅ / K)
 #
 # Outputs:
 #   Tables:
@@ -226,7 +226,7 @@ for (sid in names(trimmed_lst)) {
 dev.off()
 
 ################################################################################
-# 2. O2-BASED GROWTH & TOTAL RESPIRATION (NEW MODEL, N0 FIXED TO 1)
+# 2. O2-BASED GROWTH & TOTAL SCALING (OUR MODEL, N0 FIXED TO 1)
 #    + PARALLEL FIT USING ONLY OXYGEN_NORM ≥ 0.5
 ################################################################################
 
@@ -247,10 +247,10 @@ oxygen_data <- read_csv(FILTERED_CSV, show_col_types = FALSE) %>%
     Replicate = as.character(Replicate)
   )
 
-## ────────────── Model function (N0 fixed to 1) ─────────────────────── ##
-# Oxygen_norm(t) = O2_0 + (resp_tot / r) * (1 - exp(r * t))
-resp_model <- function(r, resp_tot, t, O2_0) {
-  O2_0 + (resp_tot / r) * (1 - exp(r * t))
+## ────────────── Model function (N0 fixed to 1; OUR SYMBOLS) ─────────── ##
+# O2_norm(t) = O2_0 + (K / r) * (1 - exp(r * t))
+o2_model <- function(r, K, t, O2_0) {
+  O2_0 + (K / r) * (1 - exp(r * t))
 }
 
 ## ────────────── Plot theme ─────────────────────────────────────────── ##
@@ -271,7 +271,7 @@ results_main <- tibble(
   Replicate           = character(),
   r_per_minute        = numeric(),
   r_per_hour          = numeric(),
-  resp_tot            = numeric(),
+  K                   = numeric(),
   O2_0                = numeric(),
   O2_ref              = numeric(),
   AICc                = numeric(),
@@ -285,7 +285,7 @@ results_O2_ge_0.5 <- tibble(
   Replicate           = character(),
   r_per_minute        = numeric(),
   r_per_hour          = numeric(),
-  resp_tot            = numeric(),
+  K                   = numeric(),
   O2_0                = numeric(),
   O2_ref              = numeric(),
   AICc                = numeric(),
@@ -334,10 +334,10 @@ for (i in seq_len(nrow(combos))) {
     slopes <- abs(diff(log(pmax(seg$Oxygen_norm, 1e-6))) / diff(seg$Time0))
     pmin(pmax(max(slopes, na.rm = TRUE), 1e-4), 5e-2)
   }
-  resp_tot_start <- {
+  K_start <- {
     slope <- suppressWarnings(min(diff(df$Oxygen_norm) / diff(df$Time0), na.rm = TRUE))
     if (!is.finite(slope)) slope <- -1e-3
-    k_guess <- abs(slope)            # because dO2_norm/dt|0 ≈ -resp_tot
+    k_guess <- abs(slope)            # dO2_norm/dt|0 ≈ -K
     k_guess <- pmin(pmax(k_guess, 1e-5), 0.1)
     k_guess
   }
@@ -345,11 +345,11 @@ for (i in seq_len(nrow(combos))) {
   # ── MAIN FIT: full trimmed series ────────────────────────────────────
   fit <- tryCatch(
     minpack.lm::nlsLM(
-      Oxygen_norm ~ resp_model(r, resp_tot, Time0, O2_0),
+      Oxygen_norm ~ o2_model(r, K, Time0, O2_0),
       data    = df,
-      start   = list(r = r_start, resp_tot = resp_tot_start, O2_0 = 1),
-      lower   = c(r = 1e-4,  resp_tot = 1e-5, O2_0 = .8),
-      upper   = c(r = .1,    resp_tot = 0.5,  O2_0 = 1.2),
+      start   = list(r = r_start, K = K_start, O2_0 = 1),
+      lower   = c(r = 1e-4,  K = 1e-5, O2_0 = .8),
+      upper   = c(r = .1,    K = 0.5,  O2_0 = 1.2),
       control = minpack.lm::nls.lm.control(maxiter = 300)
     ),
     error = function(e) NULL
@@ -367,7 +367,7 @@ for (i in seq_len(nrow(combos))) {
   
   pars  <- summary(fit)$coefficients
   r_est <- pars["r", "Estimate"]
-  K_est <- pars["resp_tot", "Estimate"]
+  K_est <- pars["K", "Estimate"]
   
   pseudo_R2 <- 1 - sum(stats::residuals(fit)^2) /
     sum((df_kept$Oxygen_norm - mean(df_kept$Oxygen_norm))^2)
@@ -391,7 +391,7 @@ for (i in seq_len(nrow(combos))) {
       Replicate           = Rep,
       r_per_minute        = r_est,
       r_per_hour          = r_est * 60,
-      resp_tot            = K_est,
+      K                   = K_est,
       O2_0                = coef(fit)["O2_0"],
       O2_ref              = O0,
       AICc                = AIC(fit),
@@ -427,7 +427,7 @@ for (i in seq_len(nrow(combos))) {
       slopes <- abs(diff(log(pmax(seg$Oxygen_norm, 1e-6))) / diff(seg$Time0))
       pmin(pmax(max(slopes, na.rm = TRUE), 1e-4), 5e-2)
     }
-    resp_tot_start_05 <- {
+    K_start_05 <- {
       slope <- suppressWarnings(min(diff(df_05$Oxygen_norm) / diff(df_05$Time0),
                                     na.rm = TRUE))
       if (!is.finite(slope)) slope <- -1e-3
@@ -438,11 +438,11 @@ for (i in seq_len(nrow(combos))) {
     
     fit_05 <- tryCatch(
       minpack.lm::nlsLM(
-        Oxygen_norm ~ resp_model(r, resp_tot, Time0, O2_0),
+        Oxygen_norm ~ o2_model(r, K, Time0, O2_0),
         data    = df_05,
-        start   = list(r = r_start_05, resp_tot = resp_tot_start_05, O2_0 = 1),
-        lower   = c(r = 1e-4,  resp_tot = 1e-5, O2_0 = .8),
-        upper   = c(r = .1,    resp_tot = 0.5,  O2_0 = 1.2),
+        start   = list(r = r_start_05, K = K_start_05, O2_0 = 1),
+        lower   = c(r = 1e-4,  K = 1e-5, O2_0 = .8),
+        upper   = c(r = .1,    K = 0.5,  O2_0 = 1.2),
         control = minpack.lm::nls.lm.control(maxiter = 300)
       ),
       error = function(e) NULL
@@ -460,7 +460,7 @@ for (i in seq_len(nrow(combos))) {
         
         pars_05  <- summary(fit_05)$coefficients
         r_est_05 <- pars_05["r", "Estimate"]
-        K_est_05 <- pars_05["resp_tot", "Estimate"]
+        K_est_05 <- pars_05["K", "Estimate"]
         
         pseudo_R2_05 <- 1 - sum(stats::residuals(fit_05)^2) /
           sum((df_05_kept$Oxygen_norm -
@@ -484,7 +484,7 @@ for (i in seq_len(nrow(combos))) {
             Replicate           = Rep,
             r_per_minute        = r_est_05,
             r_per_hour          = r_est_05 * 60,
-            resp_tot            = K_est_05,
+            K                   = K_est_05,
             O2_0                = coef(fit_05)["O2_0"],
             O2_ref              = O0,
             AICc                = AIC(fit_05),
@@ -522,7 +522,7 @@ if (length(plots_list) > 0) {
 }
 
 ################################################################################
-# 4. COMPARISON: GROWTH RATE & RESPIRATION
+# 4. COMPARISON: r & K
 #    (FULL TRIMMED) vs (OXYGEN_NORM ≥ 0.5)
 ################################################################################
 
@@ -532,7 +532,7 @@ comparison_05 <- results_main %>%
     Taxon,
     Replicate,
     r_main = r_per_minute,
-    R_main = resp_tot
+    K_main = K
   ) %>%
   dplyr::inner_join(
     results_O2_ge_0.5 %>%
@@ -541,15 +541,15 @@ comparison_05 <- results_main %>%
         Taxon,
         Replicate,
         r_05 = r_per_minute,
-        R_05 = resp_tot
+        K_05 = K
       ),
     by = c("Taxon", "Replicate")
   ) %>%
   dplyr::mutate(
     r_ratio = r_05 / r_main,
     r_diff  = r_05 - r_main,
-    R_ratio = R_05 / R_main,
-    R_diff  = R_05 - R_main
+    K_ratio = K_05 / K_main,
+    K_diff  = K_05 - K_main
   )
 
 readr::write_csv(
@@ -575,25 +575,25 @@ if (nrow(comparison_05) > 0) {
   cat("Max |r_ratio - 1|: ",
       max(abs(comparison_05$r_ratio - 1), na.rm = TRUE), "\n")
   
-  ## --- Respiration R (resp_tot) ---
-  cat("Correlation R_main vs R_05: ",
-      cor(comparison_05$R_main, comparison_05$R_05, use = "complete.obs"), "\n")
-  cat("Median R_ratio (R_05 / R_main): ",
-      median(comparison_05$R_ratio, na.rm = TRUE), "\n")
-  cat("IQR R_ratio: ",
-      paste(signif(quantile(comparison_05$R_ratio,
+  ## --- K ---
+  cat("Correlation K_main vs K_05: ",
+      cor(comparison_05$K_main, comparison_05$K_05, use = "complete.obs"), "\n")
+  cat("Median K_ratio (K_05 / K_main): ",
+      median(comparison_05$K_ratio, na.rm = TRUE), "\n")
+  cat("IQR K_ratio: ",
+      paste(signif(quantile(comparison_05$K_ratio,
                             probs = c(0.25, 0.75),
                             na.rm = TRUE), 3),
             collapse = " – "),
       "\n")
-  cat("Max |R_ratio - 1|: ",
-      max(abs(comparison_05$R_ratio - 1), na.rm = TRUE), "\n")
+  cat("Max |K_ratio - 1|: ",
+      max(abs(comparison_05$K_ratio - 1), na.rm = TRUE), "\n")
   
 } else {
   cat("No overlapping good fits between main and O2 ≥ 0.5 analyses.\n")
 }
 
-# ───────────────── 5. Save global summary of r_main vs r_05 and R_main vs R_05 ───────────── #
+# ───────────────── 5. Save global summary ───────────────────────────── #
 
 if (nrow(comparison_05) > 0) {
   comparison_05_summary <- comparison_05 %>%
@@ -607,12 +607,12 @@ if (nrow(comparison_05) > 0) {
       q75_r_ratio               = quantile(r_ratio, 0.75, na.rm = TRUE),
       max_abs_r_ratio_minus1    = max(abs(r_ratio - 1), na.rm = TRUE),
       
-      # Respiration R (resp_tot)
-      cor_R_main_R_05           = cor(R_main, R_05, use = "complete.obs"),
-      median_R_ratio            = median(R_ratio, na.rm = TRUE),
-      q25_R_ratio               = quantile(R_ratio, 0.25, na.rm = TRUE),
-      q75_R_ratio               = quantile(R_ratio, 0.75, na.rm = TRUE),
-      max_abs_R_ratio_minus1    = max(abs(R_ratio - 1), na.rm = TRUE)
+      # K
+      cor_K_main_K_05           = cor(K_main, K_05, use = "complete.obs"),
+      median_K_ratio            = median(K_ratio, na.rm = TRUE),
+      q25_K_ratio               = quantile(K_ratio, 0.25, na.rm = TRUE),
+      q75_K_ratio               = quantile(K_ratio, 0.75, na.rm = TRUE),
+      max_abs_K_ratio_minus1    = max(abs(K_ratio - 1), na.rm = TRUE)
     )
   
   readr::write_csv(
