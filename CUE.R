@@ -25,7 +25,7 @@
 # Plots (written to plots/):
 #   - oxygen_dynamics_all_models_NEWformula.pdf
 #   - oxygen_dynamics_fullsize_per_page_NEWformula.pdf
-#   - SharpeSchoolfield_Temperature_Fits_NEWformula.pdf
+#   - Fig_7_SharpeSchoolfield_Temperature_Fits_NEWformula.pdf
 ################################################################################
 
 ## ───────────────────────── 1.  Libraries ──────────────────────────────── ##
@@ -45,7 +45,6 @@ AIC_IMPROVEMENT  <- 10
 MAPE_MAX         <- 0.15
 
 ## ───────────────────────── 3.  Project paths & inoculation N_inoc ────── ##
-# Directories
 data_dir   <- "data"
 plots_dir  <- "plots"
 tables_dir <- "Tables"
@@ -55,7 +54,7 @@ dir.create(plots_dir,  showWarnings = FALSE, recursive = TRUE)
 dir.create(tables_dir, showWarnings = FALSE, recursive = TRUE)
 
 # Fixed inoculation density at t = 0 (before O2 measurements)
-INOC_CELLS_PER_uL <- 2500      # cells µL⁻¹
+INOC_CELLS_PER_uL <- 550       # cells µL⁻¹
 INOC_DELAY_MIN    <- 45        # minutes between inoculation and first O2 reading
 
 ## ───────────────────────── 4.  Cell-carbon constants ─────────────────── ##
@@ -84,11 +83,10 @@ oxygen_data <- read_csv(OXYGEN_CSV, show_col_types = FALSE) %>%
   )
 
 ## ───────────────────────── 6.  Model function (N0 fixed to 1) ───────── ##
-# Oxygen_norm(t) = O2_0 + (resp_tot / r) * (1 - exp(r * t))
-# N0 is implicitly 1 in this normalised model.
-# Actual N0 (cells at O2 start) is reconstructed later from N_inoc and r.
-resp_model <- function(r, resp_tot, t, O2_0) {
-  O2_0 + (resp_tot / r) * (1 - exp(r * t))
+# Our model:
+#   O2_norm(t) = O2_0 + (K / r) * (1 - exp(r * t))
+resp_model <- function(r, K, t, O2_0) {
+  O2_0 + (K / r) * (1 - exp(r * t))
 }
 
 ## ───────────────────────── 7.  Plot theme ────────────────────────────── ##
@@ -111,7 +109,7 @@ results <- tibble(
   N0_cells_per_mL       = numeric(),   # N0 at start of O₂ (from N_inoc & r)
   r_per_minute          = numeric(),
   r_per_hour            = numeric(),
-  resp_tot              = numeric(),   # model parameter (1/min, total scaling)
+  K                     = numeric(),   # model parameter (1/min, total scaling)
   resp_rate             = numeric(),   # per-cell respiration (mg O₂ cell⁻¹ min⁻¹)
   O2_0                  = numeric(),
   O2_ref                = numeric(),   # mean initial O₂ (mg L⁻¹) used for normalisation
@@ -162,27 +160,27 @@ for (i in seq_len(nrow(combos))) {
   O0 <- mean(head(df$Oxygen, 3), na.rm = TRUE)  # mg O₂ L⁻¹
   df <- df %>% dplyr::mutate(Oxygen_norm = Oxygen / O0)
   
-  # Starting values for r and resp_tot
+  # Starting values for r and K
   r_start <- {
     seg    <- head(df, max(3, floor(0.3 * nrow(df))))
     slopes <- abs(diff(log(pmax(seg$Oxygen_norm, 1e-6))) / diff(seg$Time0))
     pmin(pmax(max(slopes, na.rm = TRUE), 1e-4), 5e-2)
   }
-  resp_tot_start <- {
+  K_start <- {
     slope <- suppressWarnings(min(diff(df$Oxygen_norm) / diff(df$Time0), na.rm = TRUE))
     if (!is.finite(slope)) slope <- -1e-3
-    k_guess <- abs(slope)            # dO2_norm/dt|0 ≈ -resp_tot
+    k_guess <- abs(slope)
     k_guess <- pmin(pmax(k_guess, 1e-5), 0.1)
     k_guess
   }
   
   fit <- tryCatch(
     nlsLM(
-      Oxygen_norm ~ resp_model(r, resp_tot, Time0, O2_0),
+      Oxygen_norm ~ resp_model(r, K, Time0, O2_0),
       data    = df,
-      start   = list(r = r_start, resp_tot = resp_tot_start, O2_0 = 1),
-      lower   = c(r = 1e-4,  resp_tot = 1e-5, O2_0 = 0.8),
-      upper   = c(r = 0.1,   resp_tot = 0.5,  O2_0 = 1.2),
+      start   = list(r = r_start, K = K_start, O2_0 = 1),
+      lower   = c(r = 1e-4,  K = 1e-5, O2_0 = 0.8),
+      upper   = c(r = 0.1,   K = 0.5,  O2_0 = 1.2),
       control = nls.lm.control(maxiter = 300)
     ),
     error = function(e) NULL
@@ -195,9 +193,9 @@ for (i in seq_len(nrow(combos))) {
   fit <- tryCatch(update(fit, data = df_kept), error = function(e) fit)
   
   # Extract parameters
-  pars         <- coef(summary(fit))
-  r_est        <- pars["r", "Estimate"]           # min⁻¹
-  resp_tot_est <- pars["resp_tot", "Estimate"]    # 1/min
+  pars  <- coef(summary(fit))
+  r_est <- pars["r", "Estimate"]           # min⁻¹
+  K_est <- pars["K", "Estimate"]           # 1/min
   
   pseudo_R2 <- 1 - sum(residuals(fit)^2) /
     sum((df_kept$Oxygen_norm - mean(df_kept$Oxygen_norm))^2)
@@ -208,8 +206,8 @@ for (i in seq_len(nrow(combos))) {
     pars[, "Pr(>|t|)"] < PVAL_THRESHOLD,
     pseudo_R2 >= R2_THRESHOLD,
     diff(range(residuals(fit), na.rm = TRUE)) < MAX_RESID_RANGE,
-    is.finite(resp_tot_est),
-    resp_tot_est > 0, resp_tot_est < 0.5,
+    is.finite(K_est),
+    K_est > 0, K_est < 0.5,
     dplyr::between(r_est, 1e-4, 0.1),
     AIC(lm(Oxygen_norm ~ 1, data = df_kept)) - AIC(fit) >= AIC_IMPROVEMENT,
     mean(abs(residuals(fit) / df_kept$Oxygen_norm)) < MAPE_MAX
@@ -221,39 +219,31 @@ for (i in seq_len(nrow(combos))) {
     (dplyr::last(df_kept$Time0) - dplyr::first(df_kept$Time0))
   
   ## ── Reconstruct N0 at O₂ start from N_inoc and r ─────────────────────
-  # N_inoc is cells per µL at t = 0 (inoculation).
-  # Exponential growth at rate r_est between inoculation & first O₂:
-  #   N0_O2start (cells/µL) = N_inoc * exp(r_est * INOC_DELAY_MIN)
   N0_O2start_cells_per_uL <- INOC_CELLS_PER_uL * exp(r_est * INOC_DELAY_MIN)
   N0_cells_per_mL         <- N0_O2start_cells_per_uL * 1e3
   N0_cells_per_L          <- N0_O2start_cells_per_uL * 1e6
   
   ## ── Carbon-unit conversions ───────────────────────────────────────────
-  # Growth: biomass at O₂ start (per mL) * r
   biomass_fgC_per_mL   <- N0_cells_per_mL * cell_C_fg
   growth_C_fg_per_hr   <- r_est * 60 * biomass_fgC_per_mL
   growth_C_fg_per_min  <- growth_C_fg_per_hr / 60
   
-  # Respiration: volumetric O₂ flux from resp_tot & O₂_ref
-  O0_mol_per_mL            <- mgL_to_mol_per_mL(O0)  # mol O₂ mL⁻¹
-  resp_molO2_per_mL_per_hr <- resp_tot_est * O0_mol_per_mL * 60
+  O0_mol_per_mL            <- mgL_to_mol_per_mL(O0)
+  resp_molO2_per_mL_per_hr <- K_est * O0_mol_per_mL * 60
   resp_C_fg_per_hr         <- resp_molO2_per_mL_per_hr * 12e15
   resp_C_fg_per_min        <- resp_C_fg_per_hr / 60
   
-  # Per-cell respiration (mg O₂ cell⁻¹ min⁻¹), optional
   resp_rate_per_cell <- if (is.finite(N0_cells_per_L) && N0_cells_per_L > 0) {
-    resp_tot_est * O0 / N0_cells_per_L
+    K_est * O0 / N0_cells_per_L
   } else {
     NA_real_
   }
   
-  # Carbon Use Efficiency and respiration:growth ratio
   carbon_use_efficiency <- growth_C_fg_per_hr /
     (growth_C_fg_per_hr + resp_C_fg_per_hr)
   
   resp_to_growth_C <- resp_C_fg_per_hr / growth_C_fg_per_hr
   
-  # Store results
   results <- results %>%
     dplyr::add_row(
       Taxon                 = Tax,
@@ -262,7 +252,7 @@ for (i in seq_len(nrow(combos))) {
       N0_cells_per_mL       = N0_cells_per_mL,
       r_per_minute          = r_est,
       r_per_hour            = r_est * 60,
-      resp_tot              = resp_tot_est,
+      K                     = K_est,
       resp_rate             = resp_rate_per_cell,
       O2_0                  = coef(fit)["O2_0"],
       O2_ref                = O0,
@@ -278,7 +268,6 @@ for (i in seq_len(nrow(combos))) {
       carbon_use_efficiency = carbon_use_efficiency
     )
   
-  # Plot fit
   df_kept$Pred <- predict(fit, df_kept)
   label <- paste(Tax, Temp, Rep, sep = "_")
   plots_list[[label]] <-
@@ -319,26 +308,25 @@ if (length(plots_list) > 0) {
 # 11.  Temperature-response fits (3 panels + Topt & activation energies)
 #   • Two-sided Sharpe–Schoolfield, one-sided SS, and Arrhenius
 #   • Lowest AIC wins (per response variable)
-#   • Plots still show growth_C_fg_per_hr etc.
-#   • BUT growth activation energy is now based on r_per_hour (intrinsic growth)
+#   • Growth activation energy is based on r_per_hour (intrinsic growth)
+#   • CUE is fitted on logit scale (bounded 0–1)
+#
+# IMPORTANT: ONLY CHANGE = tighter CUE bounds for Eh and Th so the curve
+# must crash within the observed range (i.e. at ~40°C).
 ################################################################################
 
-# 11.1 Constant ------------------------------------------------------------------
-k_B <- 8.617e-5    # Boltzmann constant (eV K⁻¹)
+k_B <- 8.617e-5
 
-# 11.2 Safe helpers --------------------------------------------------------------
-safe_exp <- function(z) exp(pmin(700, z))        # prevents Inf
+safe_exp <- function(z) exp(pmin(700, z))
 predict_safe <- function(fit, newdata) {
   out <- try(predict(fit, newdata = newdata), silent = TRUE)
-  if (inherits(out, "try-error")) {
-    rep(NA_real_, nrow(newdata))
-  } else {
-    out
-  }
+  if (inherits(out, "try-error")) rep(NA_real_, nrow(newdata)) else out
 }
 
-# 11.3 Model functions -----------------------------------------------------------
-# Two-sided Sharpe–Schoolfield
+clamp01  <- function(p, eps = 1e-4) pmin(pmax(p, eps), 1 - eps)
+logit    <- function(p) log(p / (1 - p))
+invlogit <- function(x) 1 / (1 + exp(-x))
+
 ln_SS_two <- function(T_C, lnR0, E, El, Tl, Eh, Th) {
   T   <- T_C + 273.15
   TlK <- Tl  + 273.15
@@ -347,21 +335,140 @@ ln_SS_two <- function(T_C, lnR0, E, El, Tl, Eh, Th) {
     log1p( safe_exp(El / k_B * (1/T    - 1/TlK) ) ) -
     log1p( safe_exp(Eh / k_B * (1/ThK  - 1/T   ) ) )
 }
-# One-sided (high-T only)
 ln_SS_one <- function(T_C, lnR0, E, Eh, Th) {
   T   <- T_C + 273.15
   ThK <- Th  + 273.15
   lnR0 - E /(k_B * T) -
     log1p( safe_exp(Eh / k_B * (1/ThK - 1/T)) )
 }
-# Boltzmann / Arrhenius
 ln_boltz <- function(T_C, lnR0, E) {
   T <- T_C + 273.15
   lnR0 - E /(k_B * T)
 }
 
-# 11.4 Plot-only helper (keeps your 3-panel figure) -----------------------------
+eta_SS_two <- function(T_C, eta0, E, El, Tl, Eh, Th) {
+  T   <- T_C + 273.15
+  TlK <- Tl  + 273.15
+  ThK <- Th  + 273.15
+  eta0 - E /(k_B *   T) -
+    log1p( safe_exp(El / k_B * (1/T    - 1/TlK) ) ) -
+    log1p( safe_exp(Eh / k_B * (1/ThK  - 1/T   ) ) )
+}
+eta_SS_one <- function(T_C, eta0, E, Eh, Th) {
+  T   <- T_C + 273.15
+  ThK <- Th  + 273.15
+  eta0 - E /(k_B * T) -
+    log1p( safe_exp(Eh / k_B * (1/ThK - 1/T)) )
+}
+eta_boltz <- function(T_C, eta0, E) {
+  T <- T_C + 273.15
+  eta0 - E /(k_B * T)
+}
+
 fit_T_plot <- function(df, yvar, ylab, show_x = TRUE) {
+  
+  if (yvar == "carbon_use_efficiency") {
+    
+    df <- df %>%
+      dplyr::filter(is.finite(.data[[yvar]])) %>%
+      dplyr::mutate(
+        cue_adj   = clamp01(.data[[yvar]]),
+        cue_logit = logit(cue_adj)
+      )
+    
+    base <- ggplot(df, aes(Temperature, cue_adj)) +
+      geom_point(size = 2.5) +
+      labs(
+        x = if (show_x) expression(Temperature~"(°C)") else NULL,
+        y = ylab
+      ) +
+      isme_theme()
+    
+    if (nrow(df) < 4) return(base)
+    
+    T_min     <- min(df$Temperature)
+    T_max     <- max(df$Temperature)
+    T_opt_obs <- df$Temperature[which.max(df$cue_adj)]
+    
+    # ------------------ CUE bounds: FORCE crash at Tmax ------------------
+    Th_low  <- T_max - 3
+    Th_high <- T_max + 0.2
+    Eh_low  <- 6
+    Eh_high <- 300
+    # --------------------------------------------------------------------
+    
+    start_two <- list(
+      eta0 = logit(max(df$cue_adj)),
+      E  = 0.6,
+      El = 0.4,  Tl = T_min + 2,
+      Eh = 10,   Th = T_max - 1
+    )
+    fit_two <- try(
+      nlsLM(
+        cue_logit ~ eta_SS_two(Temperature, eta0, E, El, Tl, Eh, Th),
+        data   = df,
+        start  = start_two,
+        lower  = c(eta0=-Inf, E=0.1, El=0.1, Tl=0,  Eh=Eh_low,  Th=Th_low),
+        upper  = c(eta0= Inf, E=2.5, El=2.5, Tl=60, Eh=Eh_high, Th=Th_high),
+        control = nls.lm.control(maxiter = 1200)
+      ),
+      silent = TRUE
+    )
+    
+    start_one <- list(
+      eta0 = logit(max(df$cue_adj)),
+      E  = 0.6,
+      Eh = 10,
+      Th = T_max - 1
+    )
+    fit_one <- try(
+      nlsLM(
+        cue_logit ~ eta_SS_one(Temperature, eta0, E, Eh, Th),
+        data   = df,
+        start  = start_one,
+        lower  = c(eta0=-Inf, E=0.1, Eh=Eh_low,  Th=Th_low),
+        upper  = c(eta0= Inf, E=2.5, Eh=Eh_high, Th=Th_high),
+        control = nls.lm.control(maxiter = 1200)
+      ),
+      silent = TRUE
+    )
+    
+    fit_bol <- try(
+      nlsLM(
+        cue_logit ~ eta_boltz(Temperature, eta0, E),
+        data  = df,
+        start = list(eta0 = logit(max(df$cue_adj)), E = 0.6),
+        lower = c(eta0=-Inf, E=0.1),
+        upper = c(eta0= Inf, E=2.5),
+        control = nls.lm.control(maxiter = 800)
+      ),
+      silent = TRUE
+    )
+    
+    get_AIC <- function(f) if (inherits(f, "try-error")) Inf else AIC(f)
+    models <- list(two = fit_two, one = fit_one, bol = fit_bol)
+    aics   <- purrr::map_dbl(models, get_AIC)
+    aics[!is.finite(aics)] <- Inf
+    
+    if (all(is.infinite(aics))) {
+      message("⚠ ", yvar, ": no model converged.")
+      return(base)
+    }
+    
+    best_name <- names(which.min(aics))
+    fit       <- models[[best_name]]
+    
+    grid <- tibble::tibble(Temperature = seq(T_min, T_max, length.out = 300))
+    eta_pred  <- predict_safe(fit, grid)
+    grid$Pred <- invlogit(eta_pred)
+    grid <- grid %>% dplyr::filter(is.finite(Pred))
+    
+    if (nrow(grid) > 1) base <- base + geom_line(data = grid, aes(Temperature, Pred), linewidth = 1)
+    
+    message("✅ ", yvar, ": using ", best_name, " model (logit-bounded).")
+    return(base)
+  }
+  
   df <- df %>%
     dplyr::filter(is.finite(.data[[yvar]]), .data[[yvar]] > 0)
   
@@ -379,12 +486,11 @@ fit_T_plot <- function(df, yvar, ylab, show_x = TRUE) {
   T_max     <- max(df$Temperature)
   T_opt_obs <- df$Temperature[which.max(df[[yvar]])]
   
-  # ---------- 2-sided SS --------------------------------------------------------
   start_two <- list(
     lnR0 = log(max(df[[yvar]])),
     E  = 0.6,
-    El = 0.4,  Tl = T_min + 2,    # low-T branch
-    Eh = 1.5,  Th = T_opt_obs + 3 # high-T branch
+    El = 0.4,  Tl = T_min + 2,
+    Eh = 1.5,  Th = T_opt_obs + 3
   )
   fit_two <- try(
     nlsLM(
@@ -401,7 +507,6 @@ fit_T_plot <- function(df, yvar, ylab, show_x = TRUE) {
     silent = TRUE
   )
   
-  # ---------- 1-sided SS --------------------------------------------------------
   start_one <- list(
     lnR0 = log(max(df[[yvar]])),
     E  = 0.6,
@@ -423,7 +528,6 @@ fit_T_plot <- function(df, yvar, ylab, show_x = TRUE) {
     silent = TRUE
   )
   
-  # ---------- Boltzmann / Arrhenius -------------------------------------------
   fit_bol <- try(
     nlsLM(
       as.formula(
@@ -439,7 +543,6 @@ fit_T_plot <- function(df, yvar, ylab, show_x = TRUE) {
     silent = TRUE
   )
   
-  # ---------- choose best model (lowest AIC) -----------------------------------
   get_AIC <- function(f) if (inherits(f, "try-error")) Inf else AIC(f)
   
   models <- list(two = fit_two, one = fit_one, bol = fit_bol)
@@ -458,18 +561,14 @@ fit_T_plot <- function(df, yvar, ylab, show_x = TRUE) {
   lnpred    <- predict_safe(fit, grid)
   grid$Pred <- safe_exp(lnpred)
   grid <- grid %>% dplyr::filter(is.finite(Pred))
-  if (nrow(grid) > 1) {
-    base <- base +
-      geom_line(data = grid, aes(Temperature, Pred), linewidth = 1)
-  }
+  
+  if (nrow(grid) > 1) base <- base + geom_line(data = grid, aes(Temperature, Pred), linewidth = 1)
   
   message("✅ ", yvar, ": using ", best_name, " model (plot only).")
   base
 }
 
-# 11.4b Parameter-only helper (Topt + E + CIs, no plotting) --------------------
 fit_T_params_only <- function(df, yvar) {
-  df <- df %>% dplyr::filter(is.finite(.data[[yvar]]), .data[[yvar]] > 0)
   
   stats <- tibble::tibble(
     response   = yvar,
@@ -483,6 +582,124 @@ fit_T_params_only <- function(df, yvar) {
     Eh_upr_eV  = NA_real_
   )
   
+  if (yvar == "carbon_use_efficiency") {
+    
+    df <- df %>%
+      dplyr::filter(is.finite(.data[[yvar]])) %>%
+      dplyr::mutate(
+        cue_adj   = clamp01(.data[[yvar]]),
+        cue_logit = logit(cue_adj)
+      )
+    
+    if (nrow(df) < 4) {
+      message("⚠ ", yvar, ": fewer than 4 points, skipping TPC fit.")
+      return(stats)
+    }
+    
+    T_min     <- min(df$Temperature)
+    T_max     <- max(df$Temperature)
+    T_opt_obs <- df$Temperature[which.max(df$cue_adj)]
+    
+    # ------------------ CUE bounds: FORCE crash at Tmax ------------------
+    Th_low  <- T_max - 3
+    Th_high <- T_max + 0.2
+    Eh_low  <- 6
+    Eh_high <- 300
+    # --------------------------------------------------------------------
+    
+    start_two <- list(
+      eta0 = logit(max(df$cue_adj)),
+      E  = 0.6,
+      El = 0.4,  Tl = T_min + 2,
+      Eh = 10,   Th = T_max - 1
+    )
+    fit_two <- try(
+      nlsLM(
+        cue_logit ~ eta_SS_two(Temperature, eta0, E, El, Tl, Eh, Th),
+        data   = df,
+        start  = start_two,
+        lower  = c(eta0=-Inf, E=0.1, El=0.1, Tl=0,  Eh=Eh_low,  Th=Th_low),
+        upper  = c(eta0= Inf, E=2.5, El=2.5, Tl=60, Eh=Eh_high, Th=Th_high),
+        control = nls.lm.control(maxiter = 1200)
+      ),
+      silent = TRUE
+    )
+    
+    start_one <- list(
+      eta0 = logit(max(df$cue_adj)),
+      E  = 0.6,
+      Eh = 10,
+      Th = T_max - 1
+    )
+    fit_one <- try(
+      nlsLM(
+        cue_logit ~ eta_SS_one(Temperature, eta0, E, Eh, Th),
+        data   = df,
+        start  = start_one,
+        lower  = c(eta0=-Inf, E=0.1, Eh=Eh_low,  Th=Th_low),
+        upper  = c(eta0= Inf, E=2.5, Eh=Eh_high, Th=Th_high),
+        control = nls.lm.control(maxiter = 1200)
+      ),
+      silent = TRUE
+    )
+    
+    fit_bol <- try(
+      nlsLM(
+        cue_logit ~ eta_boltz(Temperature, eta0, E),
+        data  = df,
+        start = list(eta0 = logit(max(df$cue_adj)), E = 0.6),
+        lower = c(eta0=-Inf, E=0.1),
+        upper = c(eta0= Inf, E=2.5),
+        control = nls.lm.control(maxiter = 800)
+      ),
+      silent = TRUE
+    )
+    
+    get_AIC <- function(f) if (inherits(f, "try-error")) Inf else AIC(f)
+    models  <- list(two = fit_two, one = fit_one, bol = fit_bol)
+    aics    <- purrr::map_dbl(models, get_AIC)
+    aics[!is.finite(aics)] <- Inf
+    
+    if (all(is.infinite(aics))) {
+      message("⚠ ", yvar, ": no TPC model converged.")
+      return(stats)
+    }
+    
+    best_name        <- names(which.min(aics))
+    fit              <- models[[best_name]]
+    stats$best_model <- best_name
+    
+    grid <- tibble::tibble(Temperature = seq(T_min, T_max, length.out = 300))
+    eta_pred  <- predict_safe(fit, grid)
+    grid$Pred <- invlogit(eta_pred)
+    grid <- grid %>% dplyr::filter(is.finite(Pred))
+    
+    if (nrow(grid) > 1) stats$Topt_C <- grid$Temperature[which.max(grid$Pred)]
+    
+    pars <- coef(summary(fit))
+    
+    if ("E" %in% rownames(pars)) {
+      E_est <- pars["E", "Estimate"]
+      E_se  <- pars["E", "Std. Error"]
+      stats$E_eV     <- E_est
+      stats$E_lwr_eV <- E_est - 1.96 * E_se
+      stats$E_upr_eV <- E_est + 1.96 * E_se
+    }
+    if ("Eh" %in% rownames(pars)) {
+      Eh_est <- pars["Eh", "Estimate"]
+      Eh_se  <- pars["Eh", "Std. Error"]
+      stats$Eh_eV     <- Eh_est
+      stats$Eh_lwr_eV <- Eh_est - 1.96 * Eh_se
+      stats$Eh_upr_eV <- Eh_est + 1.96 * Eh_se
+    }
+    
+    message("✅ ", yvar, ": best model = ", best_name,
+            ", Topt ≈ ", round(stats$Topt_C, 1), " °C (logit-bounded)")
+    return(stats)
+  }
+  
+  df <- df %>% dplyr::filter(is.finite(.data[[yvar]]), .data[[yvar]] > 0)
+  
   if (nrow(df) < 4) {
     message("⚠ ", yvar, ": fewer than 4 points, skipping TPC fit.")
     return(stats)
@@ -492,7 +709,6 @@ fit_T_params_only <- function(df, yvar) {
   T_max     <- max(df$Temperature)
   T_opt_obs <- df$Temperature[which.max(df[[yvar]])]
   
-  # ---------- 2-sided Sharpe–Schoolfield --------------------------------------
   start_two <- list(
     lnR0 = log(max(df[[yvar]])),
     E  = 0.6,
@@ -514,7 +730,6 @@ fit_T_params_only <- function(df, yvar) {
     silent = TRUE
   )
   
-  # ---------- 1-sided Sharpe–Schoolfield --------------------------------------
   start_one <- list(
     lnR0 = log(max(df[[yvar]])),
     E  = 0.6,
@@ -536,7 +751,6 @@ fit_T_params_only <- function(df, yvar) {
     silent = TRUE
   )
   
-  # ---------- Boltzmann / Arrhenius -------------------------------------------
   fit_bol <- try(
     nlsLM(
       as.formula(
@@ -552,7 +766,6 @@ fit_T_params_only <- function(df, yvar) {
     silent = TRUE
   )
   
-  # ---------- choose best model (lowest AIC) -----------------------------------
   get_AIC <- function(f) if (inherits(f, "try-error")) Inf else AIC(f)
   models  <- list(two = fit_two, one = fit_one, bol = fit_bol)
   aics    <- purrr::map_dbl(models, get_AIC)
@@ -567,17 +780,13 @@ fit_T_params_only <- function(df, yvar) {
   fit              <- models[[best_name]]
   stats$best_model <- best_name
   
-  # ---------- Topt from fitted curve ------------------------------------------
   grid <- tibble::tibble(Temperature = seq(T_min, T_max, length.out = 300))
   lnpred    <- predict_safe(fit, grid)
   grid$Pred <- safe_exp(lnpred)
   grid      <- grid %>% dplyr::filter(is.finite(Pred))
   
-  if (nrow(grid) > 1) {
-    stats$Topt_C <- grid$Temperature[which.max(grid$Pred)]
-  }
+  if (nrow(grid) > 1) stats$Topt_C <- grid$Temperature[which.max(grid$Pred)]
   
-  # ---------- Activation energies + 95% CIs ------------------------------------
   pars <- coef(summary(fit))
   
   if ("E" %in% rownames(pars)) {
@@ -602,7 +811,6 @@ fit_T_params_only <- function(df, yvar) {
   stats
 }
 
-# 11.5 Prepare data --------------------------------------------------------------
 results_filtered <- results %>%
   dplyr::filter(fit_ok,
                 growth_C_fg_per_hr > 0,
@@ -610,7 +818,6 @@ results_filtered <- results %>%
 
 print(paste("Number of rows in results_filtered:", nrow(results_filtered)))
 
-# 11.6 Build panels (plots in carbon units, unchanged) --------------------------
 p_growth <- fit_T_plot(results_filtered, "growth_C_fg_per_hr",
                        expression(Growth~(fg~C~h^{-1})), TRUE)
 p_resp   <- fit_T_plot(results_filtered, "resp_C_fg_per_hr",
@@ -618,12 +825,7 @@ p_resp   <- fit_T_plot(results_filtered, "resp_C_fg_per_hr",
 p_cue    <- fit_T_plot(results_filtered, "carbon_use_efficiency",
                        "Carbon Use Efficiency", TRUE)
 
-# 11.6b Extract TPC parameters
-#     • growth: use r_per_hour (intrinsic growth rate)
-#     • respiration: still resp_C_fg_per_hr
-#     • CUE: carbon_use_efficiency
 tpc_params <- dplyr::bind_rows(
-  # Growth activation energy from r_per_hour
   fit_T_params_only(
     results_filtered %>%
       dplyr::filter(r_per_hour > 0) %>%
@@ -631,10 +833,7 @@ tpc_params <- dplyr::bind_rows(
     "growth_r_per_hr"
   ) %>% dplyr::mutate(response = "growth_r_per_hr"),
   
-  # Respiration in carbon units
   fit_T_params_only(results_filtered, "resp_C_fg_per_hr"),
-  
-  # CUE
   fit_T_params_only(results_filtered, "carbon_use_efficiency")
 )
 
@@ -643,7 +842,6 @@ readr::write_csv(
   file.path(tables_dir, "SharpeSchoolfield_Temperature_Params_NEWformula.csv")
 )
 
-# 11.7 Combine & export plots ----------------------------------------------------
 combo_plot <- patchwork::wrap_plots(p_growth, p_resp, p_cue, ncol = 3) +
   patchwork::plot_layout(guides = "collect") +
   patchwork::plot_annotation(
@@ -653,7 +851,7 @@ combo_plot <- patchwork::wrap_plots(p_growth, p_resp, p_cue, ncol = 3) +
   theme(plot.margin = margin(5, 10, 5, 10))
 
 ggsave(
-  file.path(plots_dir, "Fig_6_SharpeSchoolfield_Temperature_Fits_NEWformula.pdf"),
+  file.path(plots_dir, "Fig_7_SharpeSchoolfield_Temperature_Fits_NEWformula.pdf"),
   combo_plot, width = 12, height = 4, dpi = 600
 )
 
