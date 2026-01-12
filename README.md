@@ -120,7 +120,7 @@ Outputs:
 
 ## 4) `05CUTOFF.R`
 
-Purpose: Reviewer sensitivity check — re-fit using only O₂_norm ≥ 0.5.
+Purpose: Sensitivity check — re-fit using only O₂_norm ≥ 0.5.
 
 What it does:
 
