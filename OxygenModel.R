@@ -1,35 +1,44 @@
 ################################################################################
-# README – O₂-based growth & respiration pipeline
+# FULL PIPELINE (ALL TAXA) — CORE KEPT, FIGURE ORDER UPDATED, TIFF OUTPUTS
 #
-# This script:
-#   1) Trims raw dissolved-oxygen time series to the main exponential-decline phase.
-#   2) Fits the normalised O₂ model with N₀ fixed to 1:
-#        O2_norm(t) = O2_0 + (resp_tot / r) * (1 - exp(r * t))
-#   3) Reconstructs N₀ at O₂ start from inoculation densities and the fitted r.
-#   4) Converts resp_tot to per-cell respiration rates R (mg O₂ cell⁻¹ min⁻¹).
-#   5) Produces diagnostics, comparison plots (O₂ vs OD vs FC), and summary tables.
-#
-# Main inputs (in /data): Oxygen_Data_Long.csv, Inoculation_Density.csv, OD_r_FC_r.csv
-# Main outputs: trimmed O₂ CSVs, model fits (oxygen_model_results*.csv),
-#               growth-rate comparison plots, residual diagnostics, and Bland–Altman plots.
+# Requested changes:
+# 1) RIS plot becomes Fig 6 and is moved to the end (after Fig 5).
+# 2) Figures are saved as TIFF (instead of PDF). (Multi-page diagnostics remain PDF.)
+# 3) Fig 6 legend uses 3 rows.
+# 4) Fig 5 Bland–Altman long title is wrapped so it fits.
 ################################################################################
 
-# ── Libraries ─────────────────────────────────────────────────────────
 suppressPackageStartupMessages({
   library(tidyverse)
   library(zoo)
-  library(minpack.lm)  # Levenberg–Marquardt nls
-  library(patchwork)   # for wrap_plots()
-  library(ggsignif)
+  library(minpack.lm)
   library(lme4)
+  library(lmerTest)
+  library(grid)
+  library(viridis)
+  
+  
+  # appended analyses
+  library(patchwork)
+  library(ggsignif)
   library(multcomp)
   library(gridExtra)
-  library(lmerTest)
   library(glue)
+  library(stringr)
 })
 
+
+
 ################################################################################
-# 0. PROJECT PATHS & INOCULATION CSV
+# CONSTANTS for carbon-unit fluxes
+################################################################################
+O2_to_C_mass  <- 12/32   # mg C per mg O2 (1 mol O2 : 1 mol C respired)
+C_per_cell_fg <- 100    # fg C per cell (constant; your chosen value)
+
+
+
+################################################################################
+# 0) PATHS
 ################################################################################
 
 data_dir   <- "data"
@@ -40,35 +49,74 @@ dir.create(data_dir,   showWarnings = FALSE, recursive = TRUE)
 dir.create(plots_dir,  showWarnings = FALSE, recursive = TRUE)
 dir.create(tables_dir, showWarnings = FALSE, recursive = TRUE)
 
-# New inoculation density CSV (you provide this)
-# Expected columns: Taxon, Replicate, inoc_cells_per_uL
-INOC_CSV <- file.path(data_dir, "Inoculation_Density.csv")
+OXYGEN_CSV <- file.path(data_dir, "Oxygen_Data_Long.csv")
+
+# <-- YOUR FILE
+NINOC_TABLE_CSV <- file.path(data_dir, "Ninoc_and_deltaTime_to_N0.csv")
+
+TRIMMED_CSV  <- file.path(tables_dir, "Oxygen_Data_Trimmed.csv")
+FILTERED_CSV <- file.path(tables_dir, "Oxygen_Data_Filtered.csv")
+SKIPPED_CSV  <- file.path(tables_dir, "Skipped_Series_Log.csv")
+DIAG_PDF     <- file.path(plots_dir,  "oxygen_trimming_diagnostics.pdf")
+
+RESULTS_FIT_CSV    <- file.path(tables_dir, "oxygen_fit_results.csv")
+RESULTS_FINAL_CSV  <- file.path(tables_dir, "oxygen_results_with_R.csv")
+
+# fitted curves + per-series fits (multi-page PDFs kept as PDF)
+FITCURVES_CSV <- file.path(tables_dir, "oxygen_fit_curves.csv")
+FITS_PDF      <- file.path(plots_dir,  "oxygen_model_fit_curves.pdf")
+
+# ---- FIGURE OUTPUTS (TIFF) ----
+FIG2_FACET4_TIF     <- file.path(plots_dir, "Fig_2_oxygen_dynamics_facet4_no_overflow.tiff")
+FIG3_GROWTH_TIF     <- file.path(plots_dir, "Fig_3_growth_rate_comparison.tiff")
+FIG4_REGRESS_TIF    <- file.path(plots_dir, "Fig_4_growth_rate_regression_normalized_combined.tiff")
+FIG5_BA_TIF         <- file.path(plots_dir, "Fig_5_BlandAltman_AllReplicates_LME.tiff")
+FIG6_RIS_MAIN_TIF   <- file.path(plots_dir, "Fig_6_r_vs_R_RIS_derand_full_MAIN.tiff")
+
+SUPP_S1_RESID_TIF   <- file.path(plots_dir, "Supp_Fig_S1_residuals.tiff")
+SUPP_FIG3_NORM_TIF  <- file.path(plots_dir, "supp_Fig_3_oxygen_all_replicates_NORMALISED_by_replicate.tiff")
+METHOD_EFFECTS_TIF  <- file.path(plots_dir, "method_effects_CI.tiff")
 
 ################################################################################
-# 1. TRIMMING OXYGEN TIME SERIES
+# ============================ CORE (ADAPTED) ==================================
+# (Core computations are the same; only RIS figure moved to Fig 6 and TIFFs used)
 ################################################################################
 
-# ── Tunables (trimming aggressiveness) ────────────────────────────────
-SPLINE_SPAR    <- 0.4     # higher = smoother (often trims earlier)
-RUN_LEN        <- 10      # consecutive calm points required for plateau
-REL_PROP       <- 0.008   # fraction of max post-peak down-slope allowed
-ABS_THR        <- 0.0003  # absolute slope threshold floor
-WINDOW_LEN     <- 4       # rolling range window length for flatness
-LEVEL_DELTA    <- 0.0025  # allowed vertical wiggle (range) within window
-FLAT_RANGE_OK  <- 0.05    # skip series if total range below this
+################################################################################
+# 1) LOAD RAW OXYGEN
+################################################################################
 
-INPUT_CSV      <- file.path(data_dir,   "Oxygen_Data_Long.csv")
-TRIMMED_CSV    <- file.path(tables_dir, "Oxygen_Data_Trimmed.csv")
-FILTERED_CSV   <- file.path(tables_dir, "Oxygen_Data_Filtered.csv")
-SKIPPED_CSV    <- file.path(tables_dir, "Skipped_Series_Log.csv")
-DIAG_PDF       <- file.path(plots_dir,  "oxygen_trimming_diagnostics.pdf")
+raw <- readr::read_csv(OXYGEN_CSV, show_col_types = FALSE) %>%
+  dplyr::mutate(
+    Taxon     = as.character(Taxon),
+    Replicate = as.character(Replicate)
+  ) %>%
+  dplyr::arrange(Taxon, Replicate, Time)
 
-# ── Helper functions ──────────────────────────────────────────────────
+stopifnot(all(c("Taxon","Replicate","Time","Oxygen") %in% names(raw)))
+
+raw <- raw %>%
+  dplyr::mutate(series_id = paste(Taxon, Replicate, sep = " | "))
+
+################################################################################
+# 2) TRIM OXYGEN TIME SERIES (peak → 2nd inflection)
+################################################################################
+
+SPLINE_SPAR   <- 0.40
+RUN_LEN       <- 10
+REL_PROP      <- 0.008
+ABS_THR       <- 0.0003
+WINDOW_LEN    <- 4
+LEVEL_DELTA   <- 0.0025
+FLAT_RANGE_OK <- 0.05
+
 find_plateau <- function(o2_vec, peak_idx,
                          run_len = 2, rel_prop = 0.01, abs_thr = 0.0003,
                          window_len = 4, level_delta = 0.0025) {
-  n <- length(o2_vec); if (peak_idx >= n) return(n)
-  slopes <- diff(o2_vec)
+  n <- length(o2_vec)
+  if (peak_idx >= n) return(n)
+  
+  slopes   <- diff(o2_vec)
   max_down <- abs(min(slopes[peak_idx:(n - 1)], na.rm = TRUE))
   slope_thr <- max(abs_thr, rel_prop * max_down)
   
@@ -76,7 +124,8 @@ find_plateau <- function(o2_vec, peak_idx,
   if (n >= window_len) {
     rng[1:(n - window_len + 1)] <-
       zoo::rollapply(o2_vec, window_len,
-                     FUN = function(x) max(x) - min(x), align = "left")
+                     FUN = function(x) max(x) - min(x),
+                     align = "left", fill = NA_real_)
   }
   
   for (i in seq(peak_idx, n - run_len)) {
@@ -89,31 +138,27 @@ find_plateau <- function(o2_vec, peak_idx,
 }
 
 find_second_inflection <- function(o2_fit, idx_peak, idx_plate) {
-  slopes <- diff(o2_fit); curves <- diff(slopes)
+  slopes <- diff(o2_fit)
+  curves <- diff(slopes)
   post_pk <- seq(idx_peak + 1, length(curves))
   if (length(post_pk) == 0) return(NA_integer_)
+  
   steepest <- which.min(slopes[post_pk]) + idx_peak
   win <- seq(steepest + 1, idx_plate - 1)
+  win <- win[win >= 1 & win <= length(curves)]
   win <- win[!is.na(curves[win])]
   if (length(win) < 3) return(NA_integer_)
+  
   win[which.max(curves[win])]
 }
-
-# ── Load raw oxygen data ──────────────────────────────────────────────
-raw <- read_csv(INPUT_CSV, show_col_types = FALSE) %>%
-  dplyr::mutate(
-    Taxon     = as.character(Taxon),
-    Replicate = as.character(Replicate),
-    series_id = paste(Taxon, "Rep=", Replicate, sep = " ")
-  )
 
 series_ids  <- unique(raw$series_id)
 trimmed_lst <- vector("list", length(series_ids))
 names(trimmed_lst) <- series_ids
-skipped_log <- tibble(series_id = character(), reason = character())
+skipped_log <- tibble::tibble(series_id = character(), reason = character())
 
-# ── Main trimming loop ────────────────────────────────────────────────
 for (sid in series_ids) {
+  
   df <- raw %>%
     dplyr::filter(series_id == sid) %>%
     dplyr::arrange(Time)
@@ -123,27 +168,22 @@ for (sid in series_ids) {
     next
   }
   
-  # Smoothing used only for detection; not plotted
-  df <- df %>%
-    dplyr::mutate(O2_fit = suppressWarnings(
-      predict(smooth.spline(Time, Oxygen, spar = SPLINE_SPAR), x = Time)$y
-    ))
-  
-  if (all(is.na(df$O2_fit))) {
+  ss <- tryCatch(stats::smooth.spline(df$Time, df$Oxygen, spar = SPLINE_SPAR),
+                 error = function(e) NULL)
+  if (is.null(ss)) {
     skipped_log <- dplyr::add_row(skipped_log, series_id = sid, reason = "Spline failed")
     next
   }
+  
+  df$O2_fit <- stats::predict(ss, x = df$Time)$y
   
   if ((max(df$O2_fit, na.rm = TRUE) - min(df$O2_fit, na.rm = TRUE)) < FLAT_RANGE_OK) {
     skipped_log <- dplyr::add_row(skipped_log, series_id = sid, reason = "Too flat")
     next
   }
   
-  # Peak on raw Oxygen (true peak)
-  idx_peak <- which.max(df$Oxygen)
-  
-  # Plateau & second inflection on smoothed curve
-  idx_plate  <- min(
+  idx_peak  <- which.max(df$Oxygen)
+  idx_plate <- min(
     find_plateau(df$O2_fit, idx_peak,
                  run_len = RUN_LEN, rel_prop = REL_PROP, abs_thr = ABS_THR,
                  window_len = WINDOW_LEN, level_delta = LEVEL_DELTA),
@@ -152,77 +192,64 @@ for (sid in series_ids) {
   idx_second <- find_second_inflection(df$O2_fit, idx_peak, idx_plate)
   
   if (is.na(idx_second) || idx_second <= idx_peak || idx_second > nrow(df)) {
-    idx_end <- nrow(df); used_full <- TRUE
+    idx_end <- nrow(df)
+    used_full <- TRUE
   } else {
-    idx_end <- idx_second; used_full <- FALSE
+    idx_end <- idx_second
+    used_full <- FALSE
   }
   
   trimmed_lst[[sid]] <- df[idx_peak:idx_end, ] %>%
-    dplyr::mutate(
-      peak_time           = Time[idx_peak],
-      plateau_time        = if (idx_plate <= nrow(df)) Time[idx_plate] else NA_real_,
-      second_inflect_time = if (!is.na(idx_second)) Time[idx_second] else NA_real_,
-      used_full_series    = used_full,
-      series_id           = sid
-    )
+    dplyr::mutate(used_full_series = used_full)
 }
 
-# ── Save trimmed and filtered data ────────────────────────────────────
 trimmed <- dplyr::bind_rows(trimmed_lst)
-write_csv(trimmed,  TRIMMED_CSV)
+readr::write_csv(trimmed, TRIMMED_CSV)
+readr::write_csv(skipped_log, SKIPPED_CSV)
 
-filtered <- trimmed %>%
-  dplyr::select(Taxon, Replicate, Time, Oxygen)
+filtered <- trimmed %>% dplyr::select(Taxon, Replicate, Time, Oxygen)
+readr::write_csv(filtered, FILTERED_CSV)
 
-write_csv(filtered, FILTERED_CSV)
-write_csv(skipped_log, SKIPPED_CSV)
-
-# ── Diagnostics PDF (highlighted trimmed zone) ────────────────────────
-pdf(DIAG_PDF, 7, 5)
-
+# Diagnostics PDF (multi-page; kept as PDF)
+grDevices::pdf(DIAG_PDF, width = 7, height = 5, useDingbats = FALSE)
 for (sid in names(trimmed_lst)) {
   df_trim <- trimmed_lst[[sid]]
   if (is.null(df_trim) || nrow(df_trim) == 0) next
   
-  raw_df <- raw %>%
-    dplyr::filter(series_id == sid) %>%
-    dplyr::arrange(Time)
+  raw_df <- raw %>% dplyr::filter(series_id == sid) %>% dplyr::arrange(Time)
+  xmin_val <- min(df_trim$Time, na.rm = TRUE)
+  xmax_val <- max(df_trim$Time, na.rm = TRUE)
   
-  xmin_val <- suppressWarnings(min(df_trim$Time, na.rm = TRUE))
-  xmax_val <- suppressWarnings(max(df_trim$Time, na.rm = TRUE))
-  if (!is.finite(xmin_val) || !is.finite(xmax_val)) next
-  
-  rect_df <- tibble(
-    xmin = xmin_val,
-    xmax = xmax_val,
-    ymin = -Inf, ymax = Inf
-  )
-  
-  p <- ggplot(raw_df, aes(Time, Oxygen)) +
-    geom_rect(
-      data = rect_df, inherit.aes = FALSE,
-      aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
-      fill = "orange", alpha = 0.08
+  p <- ggplot2::ggplot(raw_df, ggplot2::aes(Time, Oxygen)) +
+    ggplot2::geom_rect(
+      data = tibble::tibble(xmin = xmin_val, xmax = xmax_val, ymin = -Inf, ymax = Inf),
+      ggplot2::aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      inherit.aes = FALSE, fill = "orange", alpha = 0.10
     ) +
-    geom_line(colour = "grey60", linewidth = 0.8) +
-    labs(
-      title = sid,
-      subtitle = "Trimmed zone (orange)",
-      x = "Time (min)", y = "O₂ (mg L⁻¹)"
-    ) +
-    theme_classic(base_size = 11)
+    ggplot2::geom_line(colour = "grey40", linewidth = 0.8) +
+    ggplot2::labs(title = sid, x = "Time (min)", y = expression(O[2]~"(mg L"^{-1}*")")) +
+    ggplot2::theme_classic(base_size = 11)
   
   print(p)
 }
-
-dev.off()
-
+grDevices::dev.off()
 
 ################################################################################
-# 2. O2‐BASED GROWTH & TOTAL RESPIRATION (N0 FIXED TO 1 IN MODEL)
+# 3) FIT O2 MODEL ON TRIMMED DATA (per Taxon × Replicate)
+#    + EXPORT FITTED CURVES (CSV) + PER-SERIES FIT PDF
 ################################################################################
 
-## ──────────────────── 1. QC / Fit thresholds ───────────────────────────── ##
+oxygen_data <- readr::read_csv(FILTERED_CSV, show_col_types = FALSE) %>%
+  dplyr::mutate(
+    Taxon     = as.character(Taxon),
+    Replicate = as.character(Replicate)
+  ) %>%
+  dplyr::arrange(Taxon, Replicate, Time)
+
+resp_model <- function(r, K, t, O2_0) {
+  O2_0 + (K / r) * (1 - exp(r * t))
+}
+
 REL_SE_THRESHOLD <- 0.15
 PVAL_THRESHOLD   <- 0.001
 R2_THRESHOLD     <- 0.90
@@ -230,223 +257,262 @@ MAX_RESID_RANGE  <- 0.20
 AIC_IMPROVEMENT  <- 10
 MAPE_MAX         <- 0.15
 
-## ──────────────────── 2. Timing info ───────────────────────────────────── ##
-INOC_DELAY_MIN <- 45   # minutes between inoculation and first O2 reading
-
-## ───────────────────────── 3.  Load trimmed oxygen data ─────────────────── ##
-oxygen_data <- read_csv(FILTERED_CSV, show_col_types = FALSE) %>%
-  dplyr::mutate(
-    Taxon     = as.character(Taxon),
-    Replicate = as.character(Replicate)
-  )
-
-## ───────────────────────── 4.  Model function (N0 fixed to 1) ───────────── ##
-# Oxygen_norm(t) = O2_0 + (resp_tot / r) * (1 - exp(r * t))
-# resp_tot is a TOTAL respiration scaling parameter in normalised units;
-# dimensional per-cell rates (mg O2 cell^-1 min^-1) are recovered later using
-# inoculation density, r, and O2_ref.
-resp_model <- function(r, resp_tot, t, O2_0) {
-  O2_0 + (resp_tot / r) * (1 - exp(r * t))
-}
-
-## ───────────────────────── 5.  Plot theme ───────────────────────────────── ##
-isme_theme <- function() {
-  theme_classic(base_size = 14) +
-    theme(
-      axis.title = element_text(size = 16),
-      axis.text  = element_text(size = 14),
-      axis.line  = element_line(linewidth = .8),
-      axis.ticks = element_line(linewidth = .6),
-      legend.position = "none"
-    )
-}
-
-## ───────────────────────── 6.  Prepare outputs ──────────────────────────── ##
-results <- tibble(
-  Taxon                = character(),
-  Replicate            = character(),
-  r_per_minute         = numeric(),
-  r_ci_lower           = numeric(),
-  r_ci_upper           = numeric(),
-  r_per_hour           = numeric(),
-  resp_tot             = numeric(),   # total respiration scaling (model param)
-  N0_cells_per_L       = numeric(),   # will be filled later
-  resp_rate            = numeric(),   # per-cell respiration (mg O2 cell^-1 min^-1)
-  resp_ci_lower        = numeric(),   # left NA
-  resp_ci_upper        = numeric(),   # left NA
-  O2_0                 = numeric(),
-  O2_ref               = numeric(),   # mean initial O2 (mg L^-1) used for normalisation
-  AICc                 = numeric(),
-  lnO2_change_per_min  = numeric(),
-  pseudo_R2            = numeric(),
-  fit_ok               = logical()
+results_fit <- tibble::tibble(
+  Taxon           = character(),
+  Replicate       = character(),
+  r_per_minute    = numeric(),
+  K               = numeric(),
+  O2_0            = numeric(),
+  O2_ref          = numeric(),
+  T_end_min       = numeric(),
+  C_tot_mg_per_L  = numeric(),
+  pseudo_R2       = numeric(),
+  AIC             = numeric(),
+  fit_ok          = logical()
 )
 
-plots_list <- list()
+fit_curves_lst <- list()
 
-resid_all <- tibble(
-  Taxon     = character(),
-  Replicate = character(),
-  Time0     = numeric(),
-  Fitted    = numeric(),
-  Residual  = numeric()
-)
+combos <- oxygen_data %>%
+  dplyr::group_by(Taxon, Replicate) %>%
+  dplyr::group_keys()
 
-## ───────────────────────── 7.  Fitting loop ─────────────────────────────── ##
-combos <- dplyr::group_keys(dplyr::group_by(oxygen_data, Taxon, Replicate))
+# per-series fit plots PDF (multi-page; kept as PDF)
+grDevices::pdf(FITS_PDF, width = 7.2, height = 5.2, useDingbats = FALSE)
+on.exit(grDevices::dev.off(), add = TRUE)
 
 for (i in seq_len(nrow(combos))) {
-  cfg <- combos[i, ]
-  Tax <- cfg$Taxon
-  Rep <- cfg$Replicate
   
-  df <- oxygen_data %>%
+  Tax <- combos$Taxon[i]
+  Rep <- combos$Replicate[i]
+  
+  df0 <- oxygen_data %>%
     dplyr::filter(Taxon == Tax, Replicate == Rep) %>%
     dplyr::arrange(Time)
-  if (nrow(df) < 5) next
   
-  # derivative-based trimming of early flat bits
-  df <- df %>%
+  if (nrow(df0) < 5) next
+  
+  # onset trim via derivative
+  df0 <- df0 %>%
     dplyr::mutate(
       dO2   = c(NA, diff(Oxygen)),
       dt    = c(NA, diff(Time)),
       dO2dt = dO2 / dt,
       sm    = zoo::rollmean(dO2dt, 3, fill = NA, align = "right")
     )
-  idx <- which(df$sm < -1e-7)[1]
-  idx <- if (is.na(idx) || idx > nrow(df) - 2) 1 else idx + 5
-  df  <- df[idx:nrow(df), ] %>%
+  
+  idx <- which(df0$sm < -1e-7)[1]
+  idx <- if (is.na(idx) || idx > nrow(df0) - 2) 1 else min(idx + 5, nrow(df0) - 2)
+  
+  df <- df0[idx:nrow(df0), ] %>%
     dplyr::mutate(Time0 = Time - min(Time, na.rm = TRUE))
   
-  # Normalise O2 for fitting
-  O0 <- mean(head(df$Oxygen, 3), na.rm = TRUE)   # O2_ref in mg L^-1
+  T_end <- max(df$Time0, na.rm = TRUE)
+  if (!is.finite(T_end) || T_end <= 0) next
+  
+  O0 <- mean(head(df$Oxygen, 3), na.rm = TRUE)
+  if (!is.finite(O0) || O0 <= 0) next
+  
   df <- df %>% dplyr::mutate(Oxygen_norm = Oxygen / O0)
   
-  # Starting values for r and resp_tot
   r_start <- {
-    seg    <- head(df, max(3, floor(.3 * nrow(df))))
+    seg <- head(df, max(3, floor(0.3 * nrow(df))))
     slopes <- abs(diff(log(pmax(seg$Oxygen_norm, 1e-6))) / diff(seg$Time0))
     pmin(pmax(max(slopes, na.rm = TRUE), 1e-4), 5e-2)
   }
-  resp_tot_start <- {
+  
+  K_start <- {
     slope <- suppressWarnings(min(diff(df$Oxygen_norm) / diff(df$Time0), na.rm = TRUE))
     if (!is.finite(slope)) slope <- -1e-3
-    k_guess <- abs(slope)            # since dO2_norm/dt|0 ≈ -resp_tot
-    k_guess <- pmin(pmax(k_guess, 1e-5), 0.1)
-    k_guess
+    k_guess <- abs(slope)
+    pmin(pmax(k_guess, 1e-5), 0.1)
   }
   
   fit <- tryCatch(
-    nlsLM(
-      Oxygen_norm ~ resp_model(r, resp_tot, Time0, O2_0),
+    minpack.lm::nlsLM(
+      Oxygen_norm ~ resp_model(r, K, Time0, O2_0),
       data    = df,
-      start   = list(r = r_start, resp_tot = resp_tot_start, O2_0 = 1),
-      lower   = c(r = 1e-4,  resp_tot = 1e-5, O2_0 = .8),
-      upper   = c(r = .1,    resp_tot = 0.5,  O2_0 = 1.2),
-      control = nls.lm.control(maxiter = 300)
+      start   = list(r = r_start, K = K_start, O2_0 = 1),
+      lower   = c(r = 1e-4,  K = 1e-5, O2_0 = 0.8),
+      upper   = c(r = 0.1,   K = 0.5,  O2_0 = 1.2),
+      control = minpack.lm::nls.lm.control(maxiter = 300)
     ),
     error = function(e) NULL
   )
   if (is.null(fit)) next
   
-  # Outlier removal based on residuals and refit
-  pred    <- predict(fit, df)
-  keep_ix <- abs(df$Oxygen_norm - pred) < 2 * sd(df$Oxygen_norm - pred, na.rm = TRUE)
-  df_kept <- df[keep_ix, ]
-  fit     <- tryCatch(update(fit, data = df_kept), error = function(e) fit)
+  pars <- summary(fit)$coefficients
+  r_est    <- pars["r", "Estimate"]
+  K_est    <- pars["K", "Estimate"]
+  O2_0_est <- pars["O2_0", "Estimate"]
   
-  pars  <- coef(summary(fit))
-  r_est <- pars["r", "Estimate"]
-  K_est <- pars["resp_tot", "Estimate"]   # total respiration scaling
+  pred  <- stats::predict(fit, df)
+  resid <- df$Oxygen_norm - pred
   
-  pseudo_R2 <- 1 - sum(residuals(fit)^2) /
-    sum((df_kept$Oxygen_norm - mean(df_kept$Oxygen_norm))^2)
+  pseudo_R2 <- 1 - sum(resid^2, na.rm = TRUE) /
+    sum((df$Oxygen_norm - mean(df$Oxygen_norm, na.rm = TRUE))^2, na.rm = TRUE)
   
-  # ── QC: based on fitted parameters (r, resp_tot) and residuals ───────
   fit_ok <- all(
     abs(pars[, "Std. Error"] / pars[, "Estimate"]) < REL_SE_THRESHOLD,
     pars[, "Pr(>|t|)"] < PVAL_THRESHOLD,
     pseudo_R2 >= R2_THRESHOLD,
-    diff(range(residuals(fit), na.rm = TRUE)) < MAX_RESID_RANGE,
-    is.finite(K_est),
-    K_est > 0, K_est < 0.5,
-    dplyr::between(r_est, 1e-4, 0.1),
-    AIC(lm(Oxygen_norm ~ 1, data = df_kept)) - AIC(fit) >= AIC_IMPROVEMENT,
-    mean(abs(residuals(fit) / df_kept$Oxygen_norm)) < MAPE_MAX
+    diff(range(resid, na.rm = TRUE)) < MAX_RESID_RANGE,
+    is.finite(K_est), K_est > 0, K_est < 0.5,
+    is.finite(r_est), dplyr::between(r_est, 1e-4, 0.1),
+    stats::AIC(stats::lm(Oxygen_norm ~ 1, data = df)) - stats::AIC(fit) >= AIC_IMPROVEMENT,
+    mean(abs(resid / df$Oxygen_norm), na.rm = TRUE) < MAPE_MAX
   )
   
-  # ── Wald CIs for r (respiration CIs left NA) ─────────────────────────
-  se_r  <- pars["r", "Std. Error"]
-  z_975 <- 1.96
+  C_tot <- (K_est / r_est) * (exp(r_est * T_end) - 1) * O0
   
-  r_ci_lower    <- if (is.finite(se_r)) r_est - z_975 * se_r else NA_real_
-  r_ci_upper    <- if (is.finite(se_r)) r_est + z_975 * se_r else NA_real_
-  resp_ci_lower <- NA_real_
-  resp_ci_upper <- NA_real_
-  
-  df_kept <- df_kept %>% dplyr::mutate(Pred = predict(fit, df_kept))
-  
-  resid_all <- dplyr::bind_rows(
-    resid_all,
-    tibble(
-      Taxon     = Tax,
-      Replicate = Rep,
-      Time0     = df_kept$Time0,
-      Fitted    = df_kept$Pred,
-      Residual  = df_kept$Oxygen_norm - df_kept$Pred
-    )
-  )
-  
-  results <- results %>%
+  results_fit <- results_fit %>%
     dplyr::add_row(
-      Taxon                = Tax,
-      Replicate            = Rep,
-      r_per_minute         = r_est,
-      r_ci_lower           = r_ci_lower,
-      r_ci_upper           = r_ci_upper,
-      r_per_hour           = r_est * 60,
-      resp_tot             = K_est,
-      N0_cells_per_L       = NA_real_,  # to be filled later
-      resp_rate            = NA_real_,  # to be filled later (mg O2 cell^-1 min^-1)
-      resp_ci_lower        = resp_ci_lower,
-      resp_ci_upper        = resp_ci_upper,
-      O2_0                 = coef(fit)["O2_0"],
-      O2_ref               = O0,        # store normalisation constant (mg L^-1)
-      AICc                 = AIC(fit),
-      lnO2_change_per_min  = (log(dplyr::last(df_kept$Oxygen_norm)) -
-                                log(dplyr::first(df_kept$Oxygen_norm))) /
-        (dplyr::last(df_kept$Time0) - dplyr::first(df_kept$Time0)),
-      pseudo_R2            = pseudo_R2,
-      fit_ok               = fit_ok
+      Taxon          = Tax,
+      Replicate      = Rep,
+      r_per_minute   = r_est,
+      K              = K_est,
+      O2_0           = O2_0_est,
+      O2_ref         = O0,
+      T_end_min      = T_end,
+      C_tot_mg_per_L = C_tot,
+      pseudo_R2      = pseudo_R2,
+      AIC            = stats::AIC(fit),
+      fit_ok         = fit_ok
     )
   
-  plot_key <- paste(Tax, Rep, sep = "_")
-  plots_list[[plot_key]] <-
-    ggplot(df_kept, aes(Time0, Oxygen_norm)) +
-    geom_point(size = 2.5) +
-    geom_line(aes(y = Pred), linewidth = .8, colour = "red") +
-    labs(
-      title = plot_key,
-      x     = expression(Time~"(min)"),
-      y     = expression(Normalised~O[2])
-    ) +
-    isme_theme()
-}
-
-# Save raw results (without N0 + resp_rate filled)
-write_csv(results, file.path(tables_dir, "oxygen_model_results_raw.csv"))
-
-if (length(plots_list) > 0) {
-  pdf(file.path(plots_dir, "oxygen_dynamics_all_models.pdf"), width = 14, height = 10)
-  print(wrap_plots(plots_list))
-  dev.off()
+  curve_df <- tibble::tibble(
+    Taxon        = Tax,
+    Replicate    = Rep,
+    Time_min     = df$Time,
+    Time0_min    = df$Time0,
+    Oxygen_raw   = df$Oxygen,
+    Oxygen_norm  = df$Oxygen_norm,
+    Fit_norm     = pred,
+    Fit_raw      = pred * O0,
+    r_per_minute = r_est,
+    K            = K_est,
+    O2_0         = O2_0_est,
+    O2_ref       = O0,
+    pseudo_R2    = pseudo_R2,
+    AIC          = stats::AIC(fit),
+    fit_ok       = fit_ok
+  )
+  fit_curves_lst[[paste(Tax, Rep, sep = " | ")]] <- curve_df
   
-  pdf(file.path(plots_dir, "oxygen_dynamics_fullsize_per_page.pdf"), width = 8, height = 6)
-  purrr::walk(plots_list, print)
-  dev.off()
+  df_plot_all <- df0 %>% dplyr::mutate(Time0 = Time - min(df$Time, na.rm = TRUE))
+  
+  p_fit <- ggplot2::ggplot() +
+    ggplot2::geom_line(
+      data = df_plot_all,
+      ggplot2::aes(x = Time0, y = Oxygen),
+      colour = "grey70", linewidth = 0.9
+    ) +
+    ggplot2::geom_point(
+      data = df,
+      ggplot2::aes(x = Time0, y = Oxygen),
+      size = 1.9, alpha = 0.9
+    ) +
+    ggplot2::geom_line(
+      data = curve_df,
+      ggplot2::aes(x = Time0_min, y = Fit_raw),
+      colour = "black", linewidth = 1.1
+    ) +
+    ggplot2::labs(
+      title = paste0(Tax, " | ", Rep),
+      subtitle = sprintf("fit_ok=%s   r=%.4g min^-1   K=%.4g   R2=%.3f",
+                         fit_ok, r_est, K_est, pseudo_R2),
+      x = "Time since fit start (min)",
+      y = expression(O[2]~"(mg L"^{-1}*")")
+    ) +
+    ggplot2::theme_classic(base_size = 11)
+  
+  print(p_fit)
 }
 
-## ─────────────────── 8. Residual diagnostics: Supp Fig S1 ─────────────── ##
+try(grDevices::dev.off(), silent = TRUE)
+
+readr::write_csv(results_fit, RESULTS_FIT_CSV)
+
+fit_curves <- dplyr::bind_rows(fit_curves_lst)
+readr::write_csv(fit_curves, FITCURVES_CSV)
+
+################################################################################
+# 4) READ Ninoc_and_deltaTime_to_N0.csv  ->  compute N0  ->  compute R
+################################################################################
+
+ninoc_tbl <- readr::read_csv(NINOC_TABLE_CSV, show_col_types = FALSE)
+names(ninoc_tbl) <- trimws(names(ninoc_tbl))
+
+expected <- c("Taxon","Replicate","N_inoculation_cells_per_L","delta_Ninoc_to_N0_min")
+if (!all(expected %in% names(ninoc_tbl)) && ncol(ninoc_tbl) >= 4) {
+  names(ninoc_tbl)[1:4] <- expected
+}
+stopifnot(all(expected %in% names(ninoc_tbl)))
+
+ninoc_tbl <- ninoc_tbl %>%
+  dplyr::transmute(
+    Taxon  = as.character(Taxon),
+    Replicate = as.character(Replicate),
+    N_inoculation_cells_per_L = as.numeric(N_inoculation_cells_per_L),
+    delta_Ninoc_to_N0_min     = as.numeric(delta_Ninoc_to_N0_min)
+  ) %>%
+  dplyr::distinct()
+
+resp <- results_fit %>%
+  dplyr::left_join(ninoc_tbl, by = c("Taxon","Replicate")) %>%
+  dplyr::mutate(
+    N0_cells_per_L = dplyr::if_else(
+      is.finite(N_inoculation_cells_per_L) & N_inoculation_cells_per_L > 0 &
+        is.finite(delta_Ninoc_to_N0_min) & delta_Ninoc_to_N0_min >= 0 &
+        is.finite(r_per_minute) & r_per_minute > 0,
+      N_inoculation_cells_per_L * exp(r_per_minute * delta_Ninoc_to_N0_min),
+      NA_real_
+    ),
+    biomass_integral_cells_min_per_L = dplyr::if_else(
+      is.finite(N0_cells_per_L) & N0_cells_per_L > 0 &
+        is.finite(r_per_minute) & r_per_minute > 0 &
+        is.finite(T_end_min) & T_end_min > 0,
+      N0_cells_per_L * (exp(r_per_minute * T_end_min) - 1) / r_per_minute,
+      NA_real_
+    ),
+    R = dplyr::if_else(
+      is.finite(C_tot_mg_per_L) & C_tot_mg_per_L > 0 &
+        is.finite(biomass_integral_cells_min_per_L) & biomass_integral_cells_min_per_L > 0,
+      C_tot_mg_per_L / biomass_integral_cells_min_per_L,
+      NA_real_
+    ),
+    
+    # ---- carbon fluxes per cell per hour (fg C cell^-1 h^-1) ----
+    R_C_fg_cell_h = R * O2_to_C_mass * 1e12 * 60,          # mg O2 -> fg C, per hour
+    G_C_fg_cell_h = r_per_minute * 60 * C_per_cell_fg,     # (h^-1) * (fg C cell^-1)
+    
+    r_per_hour = r_per_minute * 60
+  )
+
+readr::write_csv(resp, RESULTS_FINAL_CSV)
+
+################################################################################
+# ========================== FIGURES / ANALYSES ================================
+################################################################################
+
+# Reload fit_curves for safety in case you run sections separately
+fit_curves <- readr::read_csv(FITCURVES_CSV, show_col_types = FALSE)
+results    <- resp
+
+################################################################################
+# Supp Fig S1 — Residual diagnostics (TIFF)
+################################################################################
+
+resid_all <- fit_curves %>%
+  dplyr::mutate(
+    Taxon     = as.character(Taxon),
+    Replicate = as.character(Replicate),
+    Time0     = Time0_min,
+    Fitted    = Fit_norm,
+    Residual  = Oxygen_norm - Fit_norm
+  ) %>%
+  dplyr::filter(is.finite(Time0), is.finite(Fitted), is.finite(Residual))
+
 if (nrow(resid_all) > 0) {
   resid_all <- resid_all %>%
     dplyr::mutate(
@@ -458,28 +524,20 @@ if (nrow(resid_all) > 0) {
     geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.3) +
     geom_point(alpha = 0.7, size = 0.8) +
     facet_wrap(~ Taxon, scales = "free_x") +
-    labs(
-      x = "Time (min, re-zeroed)",
-      y = "Residual (normalised O\u2082)"
-    ) +
+    labs(x = "Time (min, re-zeroed)", y = "Residual (normalised O\u2082)") +
     theme_classic(base_size = 10) +
     theme(
       legend.position = "bottom",
       strip.text      = element_text(face = "italic"),
       axis.title      = element_text(size = 11),
-      axis.text       = element_text(size = 9),
-      legend.title    = element_text(size = 10),
-      legend.text     = element_text(size = 9)
+      axis.text       = element_text(size = 9)
     )
   
   p_resid_fit <- ggplot(resid_all, aes(x = Fitted, y = Residual, colour = Replicate)) +
     geom_hline(yintercept = 0, linetype = "dashed", linewidth = 0.3) +
     geom_point(alpha = 0.7, size = 0.8) +
     facet_wrap(~ Taxon, scales = "free_x") +
-    labs(
-      x = "Fitted normalised O\u2082",
-      y = "Residual (normalised O\u2082)"
-    ) +
+    labs(x = "Fitted normalised O\u2082", y = "Residual (normalised O\u2082)") +
     theme_classic(base_size = 10) +
     theme(
       legend.position = "none",
@@ -496,133 +554,61 @@ if (nrow(resid_all) > 0) {
     )
   
   ggsave(
-    filename = file.path(plots_dir, "Supp_Fig_S1_residuals.png"),
+    filename = SUPP_S1_RESID_TIF,
     plot     = S1_residuals,
     width    = 12,
     height   = 10,
-    dpi      = 300
+    dpi      = 600,
+    device   = "tiff",
+    compression = "lzw"
   )
 }
 
+################################################################################
+# Supp Fig 3 — Normalised O2 dynamics, colour by Replicate (TIFF)
+################################################################################
+
+all_fits_df_norm <- fit_curves %>%
+  dplyr::mutate(
+    TaxonFull = as.character(Taxon),
+    Replicate = factor(Replicate)
+  ) %>%
+  dplyr::select(TaxonFull, Replicate, Time0_min, Oxygen_norm, Fit_norm) %>%
+  dplyr::rename(Time = Time0_min, Oxygen_n = Oxygen_norm, Pred_n = Fit_norm) %>%
+  dplyr::arrange(TaxonFull, Replicate, Time)
+
+supp_plot_norm_rep <- ggplot(all_fits_df_norm, aes(x = Time, y = Oxygen_n)) +
+  geom_point(color = "grey60", size = 1, alpha = 0.55) +
+  geom_line(aes(y = Pred_n, color = Replicate, group = Replicate),
+            linewidth = 0.9, na.rm = TRUE) +
+  facet_wrap(~ TaxonFull, scales = "free_y") +
+  labs(
+    title = "Supplementary: Normalised O₂ Dynamics (colour = Replicate)",
+    x = "Time since fit start (minutes)",
+    y = expression("Normalised Oxygen ("*O[2]*"/"*O[2][0]*")"),
+    color = "Replicate"
+  ) +
+  scale_color_brewer(palette = "Dark2", drop = FALSE) +
+  theme_classic(base_size = 11) +
+  theme(
+    legend.position = "bottom",
+    strip.text      = element_text(face = "bold"),
+    axis.title      = element_text(size = 12),
+    axis.text       = element_text(size = 10)
+  )
+
+ggsave(
+  filename = SUPP_FIG3_NORM_TIF,
+  plot     = supp_plot_norm_rep,
+  width    = 14,
+  height   = 10,
+  dpi      = 600,
+  device   = "tiff",
+  compression = "lzw"
+)
 
 ################################################################################
-# 3. N0 FROM INOCULATION DENSITY CSV + PER-CELL RESPIRATION
-################################################################################
-
-# 3.1 Extract O2-based growth rates
-oxygen_r <- results %>%
-  dplyr::mutate(
-    Taxon     = as.character(Taxon),
-    Replicate = as.character(Replicate)
-  ) %>%
-  dplyr::select(Taxon, Replicate, r_per_minute, fit_ok)
-
-# 3.2 Load inoculation density (cells/µL at t = inoculation)
-# Expected columns in INOC_CSV: Taxon, Replicate, inoc_cells_per_uL
-inoc_input <- read_csv(INOC_CSV, show_col_types = FALSE) %>%
-  dplyr::mutate(
-    Taxon             = as.character(Taxon),
-    Replicate         = as.character(Replicate),
-    inoc_cells_per_uL = as.numeric(inoc_cells_per_uL)
-  )
-
-# 3.3 Join and compute N0 at start of O2 measurements
-# Exponential growth: cells(t) = cells_inoc * exp(r * t)
-# So N0 at O2 start (t = INOC_DELAY_MIN) is:
-#   N0_O2start = inoc_cells_per_uL * exp(r * INOC_DELAY_MIN)
-startO2_density <- inoc_input %>%
-  dplyr::left_join(oxygen_r, by = c("Taxon", "Replicate")) %>%
-  dplyr::mutate(
-    N0_O2start_cells_per_uL = inoc_cells_per_uL * exp(r_per_minute * INOC_DELAY_MIN),
-    N0_O2start_cells_per_mL = N0_O2start_cells_per_uL * 1e3,
-    N0_O2start_cells_per_L  = N0_O2start_cells_per_uL * 1e6
-  )
-
-# Optional QC
-startO2_density_qc <- startO2_density %>% dplyr::filter(fit_ok)
-
-startO2_summary <- startO2_density_qc %>%
-  dplyr::group_by(Taxon) %>%
-  dplyr::summarise(
-    mean_inoc_cells_per_uL       = mean(inoc_cells_per_uL, na.rm = TRUE),
-    sd_inoc_cells_per_uL         = sd(inoc_cells_per_uL,   na.rm = TRUE),
-    mean_N0_O2start_cells_per_uL = mean(N0_O2start_cells_per_uL, na.rm = TRUE),
-    sd_N0_O2start_cells_per_uL   = sd(N0_O2start_cells_per_uL,   na.rm = TRUE),
-    n                            = dplyr::n(),
-    .groups                      = "drop"
-  )
-
-write_csv(startO2_density,     file.path(tables_dir, "O2start_density_estimates_all.csv"))
-write_csv(startO2_density_qc,  file.path(tables_dir, "O2start_density_estimates_QC.csv"))
-write_csv(startO2_summary,     file.path(tables_dir, "O2start_density_summary_by_taxon.csv"))
-
-# 3.4 Respiration rate per cell (using inoculation-based N0 at O2 start)
-# Here we convert resp_tot (normalised units) to dimensional mg O2 cell^-1 min^-1:
-#   R = resp_tot * O2_ref / N0
-resp_per_cell <- results %>%
-  dplyr::mutate(
-    Taxon     = as.character(Taxon),
-    Replicate = as.character(Replicate)
-  ) %>%
-  dplyr::left_join(
-    startO2_density %>%
-      dplyr::mutate(
-        Taxon     = as.character(Taxon),
-        Replicate = as.character(Replicate)
-      ) %>%
-      dplyr::select(Taxon, Replicate, N0_O2start_cells_per_L),
-    by = c("Taxon", "Replicate")
-  ) %>%
-  dplyr::mutate(
-    respiration_per_cell = dplyr::if_else(
-      is.finite(N0_O2start_cells_per_L) & N0_O2start_cells_per_L > 0 &
-        is.finite(O2_ref) & O2_ref > 0,
-      resp_tot * O2_ref / N0_O2start_cells_per_L,  # mg O2 cell^-1 min^-1
-      NA_real_
-    )
-  )
-
-resp_per_cell_qc <- resp_per_cell %>%
-  dplyr::filter(
-    fit_ok,
-    is.finite(respiration_per_cell),
-    respiration_per_cell > 0
-  )
-
-resp_per_cell_summary <- resp_per_cell_qc %>%
-  dplyr::group_by(Taxon) %>%
-  dplyr::summarise(
-    mean_respiration_per_cell = mean(respiration_per_cell, na.rm = TRUE),
-    sd_respiration_per_cell   = sd(respiration_per_cell,   na.rm = TRUE),
-    n                         = dplyr::n(),
-    .groups                   = "drop"
-  )
-
-write_csv(resp_per_cell,        file.path(tables_dir, "respiration_rate_per_cell_all.csv"))
-write_csv(resp_per_cell_qc,     file.path(tables_dir, "respiration_rate_per_cell_QC.csv"))
-write_csv(resp_per_cell_summary,file.path(tables_dir, "respiration_rate_per_cell_summary_by_taxon.csv"))
-
-# 3.5 Update `results` with N0 and per-cell respiration, and save final table
-results <- results %>%
-  dplyr::mutate(
-    Taxon     = as.character(Taxon),
-    Replicate = as.character(Replicate)
-  ) %>%
-  dplyr::left_join(
-    resp_per_cell %>%
-      dplyr::select(
-        Taxon, Replicate,
-        N0_cells_per_L = N0_O2start_cells_per_L,
-        resp_rate      = respiration_per_cell
-      ),
-    by = c("Taxon", "Replicate")
-  )
-
-write_csv(results, file.path(tables_dir, "oxygen_model_results.csv"))
-
-
-################################################################################
-# 4. 4-PANEL FACET PLOT (LABELS UNDER CURVE, USING r & R)
+# Fig 2 — 4-panel facet plot with r and R labels (TIFF)
 ################################################################################
 
 TEXT_SIZE    <- 3
@@ -654,248 +640,117 @@ selected_combos <- tibble::tribble(
 )
 letters_vec <- letters[seq_len(nrow(selected_combos))]
 
-# Rebuild panel data from plots_list
-facet_data <- purrr::map2_dfr(
-  selected_combos$Taxon, selected_combos$Replicate,
-  ~{
-    key <- paste(.x, .y, sep = "_")
-    p   <- plots_list[[key]]
-    if (is.null(p)) return(NULL)
-    
-    pts <- ggplot2::layer_data(p, 1) %>%
-      dplyr::select(x, y) %>%
-      dplyr::rename(Time = x, Oxygen = y)
-    
-    fit <- ggplot2::layer_data(p, 2) %>%
-      dplyr::select(x, y) %>%
-      dplyr::rename(Time = x, Predicted_O2 = y)
-    
-    dplyr::full_join(pts, fit, by = "Time") %>%
-      dplyr::mutate(Taxon = .x, Replicate = .y, series_id = key)
-  }
-)
-
-stopifnot(all(c("Time","Oxygen","Predicted_O2","Taxon","Replicate") %in% names(facet_data)))
-
-## --- 4-panel: build resp_rate fresh, don't assume it's in `results` ---
-
-# 1) Make sure we have per-cell respiration available for labels (mg O2 cell^-1 min^-1)
-results_for_labels <- results %>%
+facet_data <- fit_curves %>%
   dplyr::mutate(
-    Taxon     = as.character(Taxon),
-    Replicate = as.character(Replicate)
+    Time = Time0_min,
+    Predicted_O2 = Fit_norm,
+    Oxygen = Oxygen_norm
   ) %>%
-  dplyr::left_join(
-    startO2_density %>%
-      dplyr::mutate(
-        Taxon     = as.character(Taxon),
-        Replicate = as.character(Replicate)
-      ) %>%
-      dplyr::select(Taxon, Replicate, N0_O2start_cells_per_L),
-    by = c("Taxon", "Replicate")
-  ) %>%
-  dplyr::mutate(
-    resp_rate = dplyr::if_else(
-      is.finite(N0_O2start_cells_per_L) & N0_O2start_cells_per_L > 0 &
-        is.finite(O2_ref) & O2_ref > 0,
-      resp_tot * O2_ref / N0_O2start_cells_per_L,
-      NA_real_
-    )
-  )
-
-# 2) Build label info from results_for_labels (which now DEFINITELY has resp_rate)
-annot_info <- results_for_labels %>%
   dplyr::inner_join(selected_combos, by = c("Taxon","Replicate")) %>%
-  dplyr::mutate(
-    FacetLabel = paste0(
-      "(", letters_vec[
-        match(paste(Taxon, Replicate),
-              paste(selected_combos$Taxon, selected_combos$Replicate))
-      ], ")~italic('", Taxon, "')"
-    ),
-    label_text = if (ONE_LINE) {
-      paste0(
-        "italic(r)==", sprintf("%.2f", r_per_hour), "~h^{-1}*','~~",
-        "italic(R)==", sci_pm(resp_rate, digits = 2),
-        "~mg~O[2]~cell^{-1}~min^{-1}"
-      )
-    } else {
-      paste0(
-        "atop(",
-        "italic(r)==", sprintf("%.2f", r_per_hour), "~h^{-1},",
-        "italic(R)==", sci_pm(resp_rate, digits = 2),
-        "~mg~O[2]~cell^{-1}~min^{-1})"
-      )
-    }
-  ) %>%
-  dplyr::select(Taxon, Replicate, FacetLabel, label_text)
+  dplyr::select(Taxon, Replicate, Time, Oxygen, Predicted_O2)
 
-facet_data <- facet_data %>%
-  dplyr::inner_join(annot_info, by = c("Taxon","Replicate"))
-
-# Label positions
-label_positions <- facet_data %>%
-  dplyr::group_by(FacetLabel) %>%
-  dplyr::group_modify(~{
-    df <- .x %>%
-      dplyr::arrange(Time) %>%
-      dplyr::distinct(Time, .keep_all = TRUE)
-    
-    xmin <- min(df$Time,    na.rm = TRUE); xmax <- max(df$Time,    na.rm = TRUE)
-    ymin <- min(df$Oxygen,  na.rm = TRUE); ymax <- max(df$Oxygen,  na.rm = TRUE)
-    xr   <- xmax - xmin;    yr   <- ymax - ymin
-    
-    x_pos <- xmin + X_ANCHOR * xr
-    x_pos <- max(xmin + X_MARGIN * xr, min(xmax - X_MARGIN * xr, x_pos))
-    
-    ok <- is.finite(df$Predicted_O2)
-    curveY <- if (sum(ok) >= 2) approx(df$Time[ok], df$Predicted_O2[ok],
-                                       xout = x_pos, rule = 2)$y
-    else ymin + 0.90 * yr
-    
-    gap   <- Y_GAP_FRAC * yr
-    y_raw <- curveY - gap
-    y_pos <- max(ymin + Y_MARGIN * yr, min(ymax - Y_MARGIN * yr, y_raw))
-    
-    tibble(x_pos = x_pos, y_pos = y_pos)
-  }) %>%
-  dplyr::ungroup()
-
-annotations <- facet_data %>%
-  dplyr::distinct(FacetLabel, label_text) %>%
-  dplyr::left_join(label_positions, by = "FacetLabel")
-
-facet_plot <- ggplot(facet_data, aes(x = Time)) +
-  geom_point(aes(y = Oxygen), size = 2.2, alpha = 0.85) +
-  geom_line(aes(y = Predicted_O2), linewidth = 1.2) +
-  facet_wrap(~ FacetLabel, nrow = 1, labeller = label_parsed) +
-  geom_text(
-    data = annotations,
-    aes(x = x_pos, y = y_pos, label = label_text),
-    inherit.aes = FALSE, parse = TRUE, hjust = 0, vjust = 1.05, size = TEXT_SIZE
-  ) +
-  coord_cartesian(clip = "on") +
-  labs(
-    x = "Time (minutes)",
-    y = expression("Normalised Oxygen (" * O[2] / O[2*","*0] * ")")
-  ) +
-  theme_classic(base_size = 16) +
-  theme(
-    strip.background = element_blank(),
-    strip.text       = element_text(size = 16, face = "italic"),
-    axis.title       = element_text(size = 17),
-    axis.text        = element_text(size = 14),
-    panel.spacing    = unit(1.2, "lines"),
-    plot.margin      = margin(12, 20, 12, 20),
-    axis.line        = element_line(linewidth = 0.7),
-    axis.ticks       = element_line(linewidth = 0.6)
-  )
-
-ggsave(
-  filename = file.path(plots_dir, "Fig_2_oxygen_dynamics_facet4_no_overflow.pdf"),
-  plot     = facet_plot,
-  width    = 14,
-  height   = 4.5
-)
-
-
-################################################################################
-# 5. Supplementary (NORMALISED): colour by Replicate, facet by TaxonFull
-################################################################################
-
-all_fits_df_norm <- purrr::imap_dfr(
-  plots_list,
-  ~{
-    key <- .y
-    p   <- .x
-    
-    pts <- tryCatch(
-      ggplot2::layer_data(p, 1) %>%
-        dplyr::select(x, y) %>%
-        dplyr::rename(Time = x, Oxygen = y),
-      error = function(e) NULL
-    )
-    fit <- tryCatch(
-      ggplot2::layer_data(p, 2) %>%
-        dplyr::select(x, y) %>%
-        dplyr::rename(Time = x, Predicted = y),
-      error = function(e) NULL
-    )
-    if (is.null(pts) || is.null(fit)) return(NULL)
-    
-    df <- dplyr::full_join(pts, fit, by = "Time") %>%
-      dplyr::arrange(Time)
-    
-    m1 <- stringr::str_match(key, "^(.*)_(R[0-9]+)$")
-    TaxonFull <- m1[,2]
-    Replicate <- m1[,3]
-    
-    O0 <- mean(head(df$Oxygen, 3), na.rm = TRUE)
-    if (is.finite(O0) && O0 > 0) {
-      df <- df %>%
-        dplyr::mutate(
-          Oxygen_n = Oxygen   / O0,
-          Pred_n   = Predicted / O0
+if (nrow(facet_data) > 0) {
+  
+  annot_info <- results %>%
+    dplyr::inner_join(selected_combos, by = c("Taxon","Replicate")) %>%
+    dplyr::mutate(
+      FacetLabel = paste0(
+        "(", letters_vec[
+          match(paste(Taxon, Replicate),
+                paste(selected_combos$Taxon, selected_combos$Replicate))
+        ], ")~italic('", Taxon, "')"
+      ),
+      label_text = if (ONE_LINE) {
+        paste0(
+          "italic(r)==", sprintf("%.2f", r_per_hour), "~h^{-1}*','~~",
+          "italic(R)==", sci_pm(R, digits = 2),
+          "~mg~O[2]~cell^{-1}~min^{-1}"
         )
-    } else {
-      df <- df %>%
-        dplyr::mutate(
-          Oxygen_n = Oxygen,
-          Pred_n   = Predicted
+      } else {
+        paste0(
+          "atop(",
+          "italic(r)==", sprintf("%.2f", r_per_hour), "~h^{-1},",
+          "italic(R)==", sci_pm(R, digits = 2),
+          "~mg~O[2]~cell^{-1}~min^{-1})"
         )
-    }
-    
-    tibble(
-      TaxonFull = TaxonFull,
-      Replicate = Replicate,
-      Time      = df$Time,
-      Oxygen_n  = df$Oxygen_n,
-      Pred_n    = df$Pred_n
+      }
+    ) %>%
+    dplyr::select(Taxon, Replicate, FacetLabel, label_text)
+  
+  facet_data <- facet_data %>%
+    dplyr::inner_join(annot_info, by = c("Taxon","Replicate"))
+  
+  label_positions <- facet_data %>%
+    dplyr::group_by(FacetLabel) %>%
+    dplyr::group_modify(~{
+      df <- .x %>% dplyr::arrange(Time) %>% dplyr::distinct(Time, .keep_all = TRUE)
+      xmin <- min(df$Time, na.rm = TRUE); xmax <- max(df$Time, na.rm = TRUE)
+      ymin <- min(df$Oxygen, na.rm = TRUE); ymax <- max(df$Oxygen, na.rm = TRUE)
+      xr <- xmax - xmin; yr <- ymax - ymin
+      
+      x_pos <- xmin + X_ANCHOR * xr
+      x_pos <- max(xmin + X_MARGIN * xr, min(xmax - X_MARGIN * xr, x_pos))
+      
+      ok <- is.finite(df$Predicted_O2)
+      curveY <- if (sum(ok) >= 2) approx(df$Time[ok], df$Predicted_O2[ok], xout = x_pos, rule = 2)$y
+      else ymin + 0.90 * yr
+      
+      gap   <- Y_GAP_FRAC * yr
+      y_raw <- curveY - gap
+      y_pos <- max(ymin + Y_MARGIN * yr, min(ymax - Y_MARGIN * yr, y_raw))
+      
+      tibble(x_pos = x_pos, y_pos = y_pos)
+    }) %>%
+    dplyr::ungroup()
+  
+  annotations <- facet_data %>%
+    dplyr::distinct(FacetLabel, label_text) %>%
+    dplyr::left_join(label_positions, by = "FacetLabel")
+  
+  facet_plot <- ggplot(facet_data, aes(x = Time)) +
+    geom_point(aes(y = Oxygen), size = 2.2, alpha = 0.85) +
+    geom_line(aes(y = Predicted_O2), linewidth = 1.2) +
+    facet_wrap(~ FacetLabel, nrow = 1, labeller = label_parsed) +
+    geom_text(
+      data = annotations,
+      aes(x = x_pos, y = y_pos, label = label_text),
+      inherit.aes = FALSE, parse = TRUE, hjust = 0, vjust = 1.05, size = TEXT_SIZE
+    ) +
+    coord_cartesian(clip = "on") +
+    labs(
+      x = "Time since fit start (minutes)",
+      y = expression("Normalised Oxygen (" * O[2] / O[2*","*0] * ")")
+    ) +
+    theme_classic(base_size = 16) +
+    theme(
+      strip.background = element_blank(),
+      strip.text       = element_text(size = 16, face = "italic"),
+      axis.title       = element_text(size = 17),
+      axis.text        = element_text(size = 14),
+      panel.spacing    = unit(1.2, "lines"),
+      plot.margin      = margin(12, 20, 12, 20),
+      axis.line        = element_line(linewidth = 0.7),
+      axis.ticks       = element_line(linewidth = 0.6)
     )
-  }
-) %>%
-  dplyr::filter(!is.na(TaxonFull), !is.na(Replicate)) %>%
-  dplyr::mutate(
-    Replicate = factor(Replicate, levels = paste0("R", 1:5))
+  
+  ggsave(
+    filename = FIG2_FACET4_TIF,
+    plot     = facet_plot,
+    width    = 14,
+    height   = 4.5,
+    dpi      = 600,
+    device   = "tiff",
+    compression = "lzw"
   )
-
-supp_plot_norm_rep <- ggplot(all_fits_df_norm, aes(x = Time, y = Oxygen_n)) +
-  geom_point(color = "grey60", size = 1, alpha = 0.55) +
-  geom_line(
-    data = all_fits_df_norm %>% dplyr::arrange(TaxonFull, Replicate, Time),
-    aes(y = Pred_n, color = Replicate, group = Replicate),
-    linewidth = 0.9,
-    na.rm = TRUE
-  ) +
-  facet_wrap(~ TaxonFull, scales = "free_y") +
-  labs(
-    title = "Supplementary: Normalised O₂ Dynamics (colour = Replicate)",
-    x = "Time (minutes)",
-    y = expression("Normalised Oxygen ("*O[2]*"/"*O[2][0]*")"),
-    color = "Replicate"
-  ) +
-  scale_color_brewer(palette = "Dark2", drop = FALSE) +
-  theme_classic(base_size = 11) +
-  theme(
-    legend.position = "bottom",
-    strip.text      = element_text(face = "bold"),
-    axis.title      = element_text(size = 12),
-    axis.text       = element_text(size = 10)
-  )
-
-ggsave(
-  filename = file.path(plots_dir, "supp_Fig_3_oxygen_all_replicates_NORMALISED_by_replicate.pdf"),
-  plot     = supp_plot_norm_rep,
-  width    = 14,
-  height   = 10
-)
-
+}
 
 ################################################################################
-# 6. BOXPLOT + MIXED-EFFECTS ANOVA (O2 vs OD600 vs FC growth rates)
+# Fig 3 — Boxplot + mixed model (TIFF)
 ################################################################################
 
-od_fc_data <- read_csv(file.path(data_dir, "OD_r_FC_r.csv"), show_col_types = FALSE) %>%
+OD_FC_CSV <- file.path(data_dir, "OD_r_FC_r.csv")
+
+od_fc_data <- readr::read_csv(OD_FC_CSV, show_col_types = FALSE) %>%
   dplyr::mutate(
     Taxon     = as.character(Taxon),
     Replicate = as.character(Replicate),
@@ -923,7 +778,7 @@ growth <- growth %>%
     doubling_time_FC    = log(2) / r_FC
   )
 
-write_csv(growth, file.path(tables_dir, "growth_rates_combined.csv"))
+readr::write_csv(growth, file.path(tables_dir, "growth_rates_combined.csv"))
 
 cb_colors <- c(
   "Oxygen"         = "#E69F00",
@@ -999,10 +854,13 @@ combined_comparison <- growth_comparison + global_comparison +
   patchwork::plot_layout(widths = c(3, 1))
 
 ggsave(
-  filename = file.path(plots_dir, "Fig_3_growth_rate_comparison.pdf"),
+  filename = FIG3_GROWTH_TIF,
   plot     = combined_comparison,
   width    = 14,
-  height   = 6
+  height   = 6,
+  dpi      = 600,
+  device   = "tiff",
+  compression = "lzw"
 )
 
 mm_method   <- lmer(Growth_Rate ~ 1 + Method + (1 | Taxon), REML = FALSE, data = growth_long)
@@ -1014,7 +872,7 @@ aic_comparison <- AIC(mm_method, mm_method_1)
 print(aic_comparison)
 
 print(summary(mm_method))
-ci_method   <- confint(mm_method, method = "Wald")
+ci_method    <- confint(mm_method, method = "Wald")
 coefficients <- fixef(mm_method)
 
 mc      <- multcomp::glht(mm_method, linfct = multcomp::mcp(Method = "Tukey"),
@@ -1061,39 +919,36 @@ method_comparison <- ggplot(method_effects, aes(x = Method, y = Estimate)) +
   geom_text(data = pairs, aes(x = (xmin + xmax) / 2, y = y.position, label = stars),
             vjust = -0.5, size = 5) +
   labs(
-    x = "Method", 
+    x = "Method",
     y = expression("Growth rate ("*min^{-1}*")"),
     title = "Comparison of Method Effects (Mixed Model)"
   ) +
   theme_classic(base_size = 15) +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  )
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 ggsave(
-  filename = file.path(plots_dir, "method_effects_CI.pdf"),
+  filename = METHOD_EFFECTS_TIF,
   plot     = method_comparison,
   width    = 8,
-  height   = 6
+  height   = 6,
+  dpi      = 600,
+  device   = "tiff",
+  compression = "lzw"
 )
 
-write_csv(method_effects, file.path(tables_dir, "method_effects_estimates.csv"))
-write_csv(pairs,          file.path(tables_dir, "method_effects_significance.csv"))
+readr::write_csv(method_effects, file.path(tables_dir, "method_effects_estimates.csv"))
+readr::write_csv(pairs,          file.path(tables_dir, "method_effects_significance.csv"))
 
 capture.output(summary(mm_OD  <- lmer(r_O2 ~ r_OD600 + (1 | Taxon), data = growth)),
                file = file.path(tables_dir, "mixed_model_OD600_summary.txt"))
 capture.output(summary(mm_FC  <- lmer(r_O2 ~ r_FC    + (1 | Taxon), data = growth)),
                file = file.path(tables_dir, "mixed_model_FC_summary.txt"))
 
-print(method_effects)
-print(summary_mc)
-
-
 ################################################################################
-# 7. LME REGRESSIONS (O2 vs OD600 / FC)
+# Fig 4 — LME regressions (TIFF)
 ################################################################################
 
-create_norm_data <- function(model, x_var) {
+create_norm_data <- function(model) {
   ranef_taxon <- ranef(model)$Taxon
   fixed_coef  <- fixef(model)
   
@@ -1107,22 +962,13 @@ create_norm_data <- function(model, x_var) {
     dplyr::mutate(r_O2_norm = r_O2 - rand_int)
   
   r2_mixed <- cor(fitted(model), growth$r_O2, use = "complete.obs")^2
+  eq_text  <- sprintf("y = %.3f + %.3fx\nR² = %.3f", fixed_coef[1], fixed_coef[2], r2_mixed)
   
-  eq_text <- sprintf("y = %.3f + %.3fx\nR² = %.3f", 
-                     fixed_coef[1], 
-                     fixed_coef[2],
-                     r2_mixed)
-  
-  list(
-    data      = growth_norm,
-    fixed_coef = fixed_coef,
-    eq_text   = eq_text,
-    x_var     = x_var
-  )
+  list(data = growth_norm, fixed_coef = fixed_coef, eq_text = eq_text)
 }
 
-od_norm <- create_norm_data(mm_OD, "r_OD600")
-fc_norm <- create_norm_data(mm_FC, "r_FC")
+od_norm <- create_norm_data(mm_OD)
+fc_norm <- create_norm_data(mm_FC)
 
 rate_range_od <- range(c(od_norm$data$r_O2_norm, od_norm$data$r_OD600), na.rm = TRUE)
 rate_range_fc <- range(c(fc_norm$data$r_O2_norm, fc_norm$data$r_FC),    na.rm = TRUE)
@@ -1145,10 +991,7 @@ p_od <- ggplot(od_norm$data, aes(x = r_OD600, y = r_O2_norm)) +
     x = expression(paste("Growth Rate - OD"[600], " (min"^-1, ")")),
     y = expression(paste("Growth Rate - O"[2], " (min"^-1, ")"))
   ) +
-  theme(
-    legend.position = "top",
-    legend.title = element_blank()
-  ) +
+  theme(legend.position = "top", legend.title = element_blank()) +
   coord_cartesian(xlim = rate_range, ylim = rate_range) +
   annotate("text",
            x = min(rate_range) + 0.1 * diff(rate_range),
@@ -1178,21 +1021,23 @@ p_fc <- ggplot(fc_norm$data, aes(x = r_FC, y = r_O2_norm)) +
 combined_norm <- p_od / p_fc
 
 ggsave(
-  filename = file.path(plots_dir, "Fig_4_growth_rate_regression_normalized_combined.pdf"),
+  filename = FIG4_REGRESS_TIF,
   plot     = combined_norm,
   width    = 10,
-  height   = 16
+  height   = 16,
+  dpi      = 600,
+  device   = "tiff",
+  compression = "lzw"
 )
 
-
 ################################################################################
-# 8. BLAND–ALTMAN PLOTS (All replicates) WITH LME REGRESSION
+# Fig 5 — Bland–Altman (title WRAPPED so it fits) (TIFF)
 ################################################################################
 
 `%||%` <- function(a, b) if (!is.null(a) && length(a) > 0 && is.finite(a)) a else b
 
-df_raw <- read_csv(file.path(tables_dir, "growth_rates_combined.csv"),
-                   show_col_types = FALSE) %>%
+df_raw <- readr::read_csv(file.path(tables_dir, "growth_rates_combined.csv"),
+                          show_col_types = FALSE) %>%
   dplyr::rename(
     Oxygen_r = r_O2,
     OD_r     = r_OD600,
@@ -1228,7 +1073,6 @@ bland_altman_plot_lme <- function(df, method1, method2, label1, label2, panel_le
   within_limits <- mean(df_ba$diff >= lower & df_ba$diff <= upper, na.rm = TRUE) * 100
   
   df_reg <- df_ba %>% dplyr::filter(diff >= lower, diff <= upper)
-  
   use_lmer <- dplyr::n_distinct(df_reg$Taxon) >= 2 && nrow(df_reg) >= 5
   
   if (use_lmer) {
@@ -1265,11 +1109,15 @@ bland_altman_plot_lme <- function(df, method1, method2, label1, label2, panel_le
     "  p-value for slope: {ifelse(is.na(p_value), 'NA', format.pval(p_value, digits = 4))}\n"
   ))
   
+  # Wrapped title so it fits
+  title_raw <- glue::glue("({panel_letter}) {label1} vs {label2} — Bland–Altman (all replicates)")
+  title_wrapped <- stringr::str_wrap(title_raw, width = 55)
+  
   ggplot(df_ba, aes(x = avg, y = diff)) +
     annotate("rect", xmin = -Inf, xmax = Inf, ymin = lower, ymax = upper,
              fill = "#D55E00", alpha = 0.15) +
     geom_point(size = 2.5, alpha = 0.9, color = "black") +
-    geom_hline(yintercept = bias,  color = "black",    linewidth = 0.7) +
+    geom_hline(yintercept = bias,  color = "black",     linewidth = 0.7) +
     geom_hline(yintercept = upper, color = "firebrick", linewidth = 0.8, linetype = "dashed") +
     geom_hline(yintercept = lower, color = "firebrick", linewidth = 0.8, linetype = "dashed") +
     annotate("text", x = min(df_ba$avg, na.rm = TRUE), y = upper,
@@ -1285,25 +1133,345 @@ bland_altman_plot_lme <- function(df, method1, method2, label1, label2, panel_le
              label = sprintf("%% within limits: %.1f%%", within_limits),
              hjust = 0, size = 4, color = "black", fontface = "italic") +
     labs(
-      title = glue::glue("({panel_letter}) {label1} vs {label2} — Bland–Altman (all replicates)"),
+      title = title_wrapped,
       x = "Mean growth rate (per replicate)",
       y = "Difference in growth rate (per replicate)"
     ) +
-    theme_classic(base_size = 14)
+    theme_classic(base_size = 14) +
+    theme(plot.title = element_text(lineheight = 1.05))
 }
 
 plot1 <- bland_altman_plot_lme(df_raw, Oxygen_r, OD_r, "Oxygen", "OD600", "A")
-plot2 <- bland_altman_plot_lme(df_raw, Oxygen_r, FC_r, "Oxygen", "Flow Cytometry", "B")
+plot2 <- bland_altman_plot_lme(df_raw, Oxygen_r, FC_r, "Oxygen", "Flow cytometry", "B")
 
 combined_plot <- gridExtra::grid.arrange(plot1, plot2, ncol = 2)
 
 ggsave(
-  filename = file.path(plots_dir, "Fig_5_BlandAltman_AllReplicates_LME.pdf"),
+  filename = FIG5_BA_TIF,
   plot     = combined_plot,
   width    = 14,
-  height   = 6
+  height   = 6,
+  dpi      = 600,
+  device   = "tiff",
+  compression = "lzw"
 )
 
 ################################################################################
-# END OF SCRIPT
+# Fig 6 — RIS + slope intensity (publication combined A/B using patchwork)
+#  - Fig 6a (A): ONE-PANEL RIS (collapsed) + taxon-specific fitted lines
+#  - Fig 6b (B): Taxon-specific slope “intensity” (forest/caterpillar)
+#  - Combined export: Fig_6_COMBINED.tiff with tags (A) and (B)
+#  - Same Taxon colours used in BOTH panels (locked via named palette)
+#
+# USER REQUESTED CHANGES:
+# 1) Panel tags as (A) and (B) (parentheses)
+# 2) Panel (A) annotation uses y = m x + n (NO (x - x̄) text)
+# 3) Panel (B) x-axis text: "Taxon-specific slope" ONLY (no beta1+b1_taxon text)
 ################################################################################
+
+# ---- OUTPUTS (add these paths) ----
+FIG6B_SLOPES_TIF   <- file.path(plots_dir, "Fig_6b_taxon_specific_slopes.tiff")
+FIG6_COMBINED_TIF  <- file.path(plots_dir, "Fig_6_COMBINED.tiff")
+
+rm_df <- results %>%
+  dplyr::filter(
+    fit_ok,
+    is.finite(G_C_fg_cell_h), G_C_fg_cell_h > 0,
+    is.finite(R_C_fg_cell_h), R_C_fg_cell_h > 0
+  ) %>%
+  dplyr::mutate(
+    Taxon = factor(Taxon),
+    log_G = log10(G_C_fg_cell_h),
+    log_R = log10(R_C_fg_cell_h)
+  )
+
+if (nrow(rm_df) < 8 || dplyr::n_distinct(rm_df$Taxon) < 2) {
+  warning("Not enough data / taxa for Fig 6 random-slope RIS model.")
+} else {
+  
+  # -----------------------------
+  # 1) Center x for the mixed model (critical)
+  # -----------------------------
+  x0 <- mean(rm_df$log_R, na.rm = TRUE)
+  
+  rm_df2 <- rm_df %>%
+    dplyr::mutate(log_Rc = log_R - x0)
+  
+  mm <- suppressWarnings(
+    lmerTest::lmer(
+      log_G ~ log_Rc + (1 + log_Rc | Taxon),
+      data = rm_df2,
+      REML = FALSE
+    )
+  )
+  
+  utils::capture.output(
+    summary(mm),
+    file = file.path(tables_dir, "mixed_model_Fig6_RIS_centeredX.txt")
+  )
+  
+  fe <- lme4::fixef(mm)  # (Intercept), log_Rc
+  
+  re_tbl <- lme4::ranef(mm)$Taxon %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("Taxon") %>%
+    dplyr::transmute(
+      Taxon = factor(Taxon, levels = levels(rm_df2$Taxon)),
+      b0    = .data[["(Intercept)"]],
+      b1    = .data[["log_Rc"]]
+    )
+  
+  # -----------------------------
+  # 2) Collapse: remove ONLY taxon intercept b0
+  # -----------------------------
+  rm_collapsed <- rm_df2 %>%
+    dplyr::left_join(re_tbl, by = "Taxon") %>%
+    dplyr::mutate(log_G_collapsed = log_G - b0)
+  
+  # -----------------------------
+  # 3) Global fixed-effect line + 95% CI (fixed effects only)
+  # -----------------------------
+  x_seq <- seq(min(rm_df2$log_R, na.rm = TRUE),
+               max(rm_df2$log_R, na.rm = TRUE),
+               length.out = 250)
+  x_seq_c <- x_seq - x0
+  
+  V  <- as.matrix(vcov(mm))
+  X  <- cbind(1, x_seq_c)
+  mu <- as.numeric(X %*% fe)
+  se <- sqrt(pmax(0, rowSums((X %*% V) * X)))
+  
+  pred_global <- tibble::tibble(
+    log_R = x_seq,
+    mu    = mu,
+    lo    = mu - 1.96 * se,
+    hi    = mu + 1.96 * se
+  )
+  
+  # -----------------------------
+  # 4) Taxon-specific fitted lines: extend ranges + minimum span
+  # -----------------------------
+  EXPAND_FRAC <- 0.25
+  MIN_SPAN    <- 0.35
+  
+  x_global_min <- min(rm_df2$log_R, na.rm = TRUE)
+  x_global_max <- max(rm_df2$log_R, na.rm = TRUE)
+  
+  taxon_ranges <- rm_df2 %>%
+    dplyr::group_by(Taxon) %>%
+    dplyr::summarise(
+      xmin = min(log_R, na.rm = TRUE),
+      xmax = max(log_R, na.rm = TRUE),
+      xmid = mean(log_R, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      span  = pmax(xmax - xmin, MIN_SPAN),
+      xmin2 = pmax(x_global_min, xmid - 0.5 * span),
+      xmax2 = pmin(x_global_max, xmid + 0.5 * span),
+      xmin3 = pmax(x_global_min, xmin2 - EXPAND_FRAC * span),
+      xmax3 = pmin(x_global_max, xmax2 + EXPAND_FRAC * span)
+    )
+  
+  taxon_lines <- re_tbl %>%
+    dplyr::left_join(taxon_ranges, by = "Taxon") %>%
+    dplyr::mutate(
+      slope_tax           = unname(fe[2]) + b1,
+      intercept_collapsed = unname(fe[1])
+    ) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(log_R_seq = list(seq(xmin3, xmax3, length.out = 120))) %>%
+    dplyr::ungroup() %>%
+    tidyr::unnest(log_R_seq) %>%
+    dplyr::mutate(log_Rc_seq = log_R_seq - x0) %>%
+    dplyr::transmute(
+      Taxon,
+      log_R = log_R_seq,
+      mu_tax_collapsed = intercept_collapsed + slope_tax * log_Rc_seq
+    )
+  
+  # -----------------------------
+  # 5) Colours (same mapping used for Fig 6a + Fig 6b)
+  # -----------------------------
+  leg_nrow <- 3
+  n_tax    <- nlevels(rm_df2$Taxon)
+  leg_ncol <- ceiling(n_tax / leg_nrow)
+  
+  okabe_ito_extended_distinct <- c(
+    "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+    "#0072B2", "#D55E00", "#CC79A7", "#000000",
+    "#332288", "#88CCEE", "#117733", "#999933",
+    "#CC6677", "#AA4499", "#661100", "#BBBBBB"
+  )
+  
+  pal <- if (n_tax <= length(okabe_ito_extended_distinct)) {
+    okabe_ito_extended_distinct[seq_len(n_tax)]
+  } else {
+    rep(okabe_ito_extended_distinct, length.out = n_tax)
+  }
+  
+  pal_named <- stats::setNames(pal, levels(rm_df2$Taxon))
+  
+  isme_theme_pub <- function() {
+    ggplot2::theme_classic(base_size = 14) +
+      ggplot2::theme(
+        axis.title    = ggplot2::element_text(size = 15),
+        axis.text     = ggplot2::element_text(size = 13),
+        axis.line     = ggplot2::element_line(linewidth = 0.9),
+        axis.ticks    = ggplot2::element_line(linewidth = 0.7),
+        legend.position   = "top",
+        legend.direction  = "horizontal",
+        legend.justification = "center",
+        legend.title      = ggplot2::element_blank(),
+        legend.text       = ggplot2::element_text(face = "italic", size = 11),
+        legend.key.width  = grid::unit(1.00, "lines"),
+        legend.key.height = grid::unit(0.75, "lines"),
+        legend.spacing.x  = grid::unit(0.30, "lines"),
+        legend.box        = "vertical",
+        legend.margin     = ggplot2::margin(b = 6, unit = "pt"),
+        plot.margin = grid::unit(c(10, 42, 10, 22), "pt")
+      )
+  }
+  
+  r2_mixed <- cor(stats::fitted(mm), rm_df2$log_G, use = "complete.obs")^2
+  
+  # For annotation: express the fitted fixed-effects line back on UNCENTERED x:
+  # log_G = (beta0 - beta1*x0) + beta1*log_R  => y = m x + n
+  m_fixed <- unname(fe[2])
+  n_fixed <- unname(fe[1] - fe[2] * x0)
+  
+  ann_text <- sprintf(
+    "Fixed effect: y = %.2f x + %.2f\nFixed slope = %.2f   R² (fitted vs observed) = %.2f",
+    m_fixed, n_fixed, m_fixed, r2_mixed
+  )
+  
+  # -----------------------------
+  # 6a) Fig 6a — ONE-PANEL RIS (collapsed)
+  # -----------------------------
+  p6 <- ggplot2::ggplot(rm_collapsed, ggplot2::aes(x = log_R, y = log_G_collapsed, colour = Taxon)) +
+    ggplot2::geom_ribbon(
+      data = pred_global,
+      ggplot2::aes(x = log_R, ymin = lo, ymax = hi),
+      inherit.aes = FALSE,
+      alpha = 0.06,
+      colour = NA
+    ) +
+    ggplot2::geom_line(
+      data = pred_global,
+      ggplot2::aes(x = log_R, y = mu),
+      inherit.aes = FALSE,
+      linewidth = 1.15,
+      colour = "black"
+    ) +
+    ggplot2::geom_point(size = 2.2, alpha = 0.55) +
+    ggplot2::geom_line(
+      data = taxon_lines,
+      ggplot2::aes(x = log_R, y = mu_tax_collapsed, colour = Taxon, group = Taxon),
+      inherit.aes = FALSE,
+      linewidth = 1.55,
+      alpha = 0.98
+    ) +
+    ggplot2::scale_color_manual(values = pal_named, labels = function(x) gsub("_", " ", x)) +
+    ggplot2::guides(
+      colour = ggplot2::guide_legend(
+        nrow = leg_nrow, ncol = leg_ncol, byrow = TRUE,
+        override.aes = list(size = 3.1, alpha = 1, linewidth = 1.2)
+      )
+    ) +
+    ggplot2::labs(
+      x = expression(log[10](R~"(fg C cell"^{-1}~" h"^{-1}*")")),
+      y = expression("Taxon-collapsed " * log[10](G~"(fg C cell"^{-1}~" h"^{-1}*")"))
+    ) +
+    ggplot2::annotate(
+      "text",
+      x = min(rm_collapsed$log_R, na.rm = TRUE) + 0.03 * diff(range(rm_collapsed$log_R, na.rm = TRUE)),
+      y = max(rm_collapsed$log_G_collapsed, na.rm = TRUE) - 0.05 * diff(range(rm_collapsed$log_G_collapsed, na.rm = TRUE)),
+      label = ann_text,
+      hjust = 0, vjust = 1, size = 4.1, lineheight = 1.05
+    ) +
+    isme_theme_pub()
+  
+  # Save Fig 6a (optional)
+  ggsave(
+    filename = FIG6_RIS_MAIN_TIF,
+    plot     = p6,
+    width    = 9.0,
+    height   = 6.9 + 0.55 * (leg_nrow - 1),
+    dpi      = 600,
+    device   = "tiff",
+    compression = "lzw"
+  )
+  
+  readr::write_csv(rm_collapsed, file.path(tables_dir, "data_Fig6_RIS_COLLAPSED_centeredX.csv"))
+  readr::write_csv(taxon_lines,  file.path(tables_dir, "Fig6_taxon_specific_lines_COLLAPSED_centeredX_EXTENDED.csv"))
+  
+  # -----------------------------
+  # 6b) Fig 6b — Taxon-specific slope “intensity”
+  # -----------------------------
+  beta1    <- lme4::fixef(mm)[["log_Rc"]]
+  se_beta1 <- sqrt(as.matrix(vcov(mm))[["log_Rc", "log_Rc"]])
+  
+  re_tax <- lme4::ranef(mm, condVar = TRUE)$Taxon
+  pv     <- attr(re_tax, "postVar")
+  
+  taxa  <- rownames(re_tax)
+  b1    <- re_tax[, "log_Rc"]
+  se_b1 <- sqrt(pmax(0, pv[2, 2, ]))
+  
+  slopes_df <- tibble::tibble(
+    Taxon     = factor(taxa, levels = levels(rm_df2$Taxon)),
+    slope_tax = as.numeric(beta1 + b1),
+    se_tax    = sqrt(se_beta1^2 + se_b1^2),
+    lo        = slope_tax - 1.96 * se_tax,
+    hi        = slope_tax + 1.96 * se_tax
+  ) %>%
+    dplyr::filter(!is.na(Taxon)) %>%
+    dplyr::arrange(slope_tax) %>%
+    dplyr::mutate(Taxon_ord = factor(as.character(Taxon), levels = as.character(Taxon)))
+  
+  readr::write_csv(slopes_df, file.path(tables_dir, "Fig6b_taxon_specific_slopes.csv"))
+  
+  p6b <- ggplot2::ggplot(slopes_df, ggplot2::aes(x = slope_tax, y = Taxon_ord, colour = Taxon)) +
+    ggplot2::geom_vline(xintercept = beta1, linetype = "dashed", linewidth = 0.8) +
+    ggplot2::geom_errorbarh(ggplot2::aes(xmin = lo, xmax = hi), height = 0.0, linewidth = 0.9) +
+    ggplot2::geom_point(size = 2.8) +
+    ggplot2::scale_color_manual(values = pal_named, guide = "none") +
+    ggplot2::labs(
+      x = "Taxon-specific slope",
+      y = NULL
+    ) +
+    ggplot2::theme_classic(base_size = 14) +
+    ggplot2::theme(
+      axis.text.y  = ggplot2::element_text(face = "italic", size = 11),
+      axis.title.x = ggplot2::element_text(size = 15)
+    )
+  
+  # Save Fig 6b (optional)
+  ggplot2::ggsave(
+    filename = FIG6B_SLOPES_TIF,
+    plot     = p6b,
+    width    = 7.8,
+    height   = max(4.8, 0.28 * nrow(slopes_df) + 1.2),
+    dpi      = 600,
+    device   = "tiff",
+    compression = "lzw"
+  )
+  
+  # -----------------------------
+  # 6 combined (A/B) — publication combined figure with tags "(A)" "(B)"
+  # -----------------------------
+  fig6_combined <- (p6 + p6b) +
+    patchwork::plot_layout(widths = c(2.2, 1)) +
+    patchwork::plot_annotation(tag_levels = list(c("(A)", "(B)")))
+  
+  ggplot2::ggsave(
+    filename = FIG6_COMBINED_TIF,
+    plot     = fig6_combined,
+    width    = 16,
+    height   = 7.2,
+    dpi      = 600,
+    device   = "tiff",
+    compression = "lzw"
+  )
+}
+
