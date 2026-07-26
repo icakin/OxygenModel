@@ -1,0 +1,5 @@
+.DS_Store
+_to_delete/
+.Rhistory
+.Rproj.user/
+Rplots.pdf

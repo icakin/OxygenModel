@@ -1,0 +1,26 @@
+Linear mixed model fit by REML. t-tests use Satterthwaite's method ['lmerModLmerTest']
+Formula: r_O2 ~ r_FC + (1 | Taxon)
+   Data: growth
+
+REML criterion at convergence: -735.8
+
+Scaled residuals: 
+     Min       1Q   Median       3Q      Max 
+-2.75925 -0.49975 -0.04322  0.59264  2.78501 
+
+Random effects:
+ Groups   Name        Variance  Std.Dev.
+ Taxon    (Intercept) 1.235e-06 0.001111
+ Residual             1.918e-06 0.001385
+Number of obs: 75, groups:  Taxon, 15
+
+Fixed effects:
+             Estimate Std. Error        df t value Pr(>|t|)    
+(Intercept) 3.098e-03  8.677e-04 2.560e+01   3.571  0.00144 ** 
+r_FC        8.848e-01  3.535e-02 2.911e+01  25.029  < 2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Correlation of Fixed Effects:
+     (Intr)
+r_FC -0.926
