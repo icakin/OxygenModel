@@ -4,3 +4,6 @@ _to_delete/
 .Rproj.user/
 Rplots.pdf
 _wip_backup/
+
+# R session temp
+scripts/.RDataTmp
