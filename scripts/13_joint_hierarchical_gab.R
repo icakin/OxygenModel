@@ -1,5 +1,5 @@
 # =============================================================================
-# 12_joint_hierarchical_gab.R
+# 13_joint_hierarchical_gab.R
 #   Gab's joint hierarchical fit that PROPAGATES the within-curve r-K covariance
 #   into the taxon-level estimates, instead of discarding vcov() as the
 #   two-stage pipeline does. This version converges (R-hat ~1.00 in seconds).
@@ -26,7 +26,7 @@
 # INPUT   results/tables/oxygen_fit_curves.csv, oxygen_results_with_R.csv
 # OUTPUT  results/rds/joint_hierarchical_gab.rds
 #         results/tables/joint_vs_twostage_uncertainty.csv
-# RUN     Rscript scripts/12_joint_hierarchical_gab.R          (needs rstan)
+# RUN     Rscript scripts/13_joint_hierarchical_gab.R          (needs rstan)
 # =============================================================================
 
 .this_dir <- {

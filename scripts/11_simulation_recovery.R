@@ -1,5 +1,5 @@
 # =============================================================================
-# 10_simulation_recovery.R - Synthetic parameter-recovery validation (Fig S2)
+# 11_simulation_recovery.R - Synthetic parameter-recovery validation (Fig S2)
 # =============================================================================
 # Simulates noisy normalised-O2 trajectories from the model across grids of true
 # r, true per-cell R, sampling interval, duration and noise, mimics trimming

@@ -1,5 +1,5 @@
 # =============================================================================
-# 13_joint_hierarchical_prototype.R   (v2 - reparameterised)
+# 14_joint_hierarchical_prototype.R   (v2 - reparameterised)
 #   PROTOTYPE: one hierarchical model fitted to the oxygen traces directly,
 #   instead of the current two-stage "fit each curve, then summarise".
 # =============================================================================
@@ -43,7 +43,7 @@
 # comparison is meaningless no matter how sensible the numbers look.
 #
 # REQUIRES brms + Stan backend, minpack.lm, dplyr, posterior.
-# RUN      Rscript scripts/13_joint_hierarchical_prototype.R
+# RUN      Rscript scripts/14_joint_hierarchical_prototype.R
 # =============================================================================
 
 QUICK <- TRUE     # TRUE = 4 chains x 1500. FALSE = 4 chains x 4000.

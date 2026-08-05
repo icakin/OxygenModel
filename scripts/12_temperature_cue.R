@@ -1,5 +1,5 @@
 # =============================================================================
-# 11_temperature_cue.R - Temperature-gradient growth / respiration / CUE (Fig 7)
+# 12_temperature_cue.R - Temperature-gradient growth / respiration / CUE (Fig 7)
 # =============================================================================
 # Fits the normalised O2 model per (Taxon, Temperature, Replicate), reconstructs
 # N0 from a fixed inoculation density + fitted r, converts to carbon fluxes and

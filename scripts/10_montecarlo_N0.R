@@ -1,5 +1,5 @@
 # =============================================================================
-# 09_montecarlo_N0.R - Monte-Carlo sensitivity of respiration R to N0
+# 10_montecarlo_N0.R - Monte-Carlo sensitivity of respiration R to N0
 # =============================================================================
 # For each (Taxon, Replicate), treats the fitted N0 as the mean and samples N0
 # across a grid of CV values, propagating the uncertainty into R = K*O2_ref/N0
