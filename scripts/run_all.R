@@ -9,7 +9,7 @@
 #   04 experiment_inputs (App) per-taxon Ninoc + cell size                           [optional]
 #   05 oxygen_fits         nlsLM fits (honours 03 windows/exclusions), N0/R recon
 #   06 main_figures        Fig 2, Supp Fig 3, Supp S1, Fig 6 (r vs R RIS)
-#   07 supp_growth_resp    supplementary growth-vs-respiration figure (r vs R)
+#   07 fig6_growth_resp    Figure 6: per-cell respiration vs growth (r vs R)
 #   08 cutoff_sensitivity  O2_norm >= 0.5 sensitivity fits + dynamics PDFs
 #   09 window_sensitivity  fit-window robustness of K, R, r (reviewer test)
 #   10 montecarlo_N0       Monte-Carlo of R vs N0 uncertainty + figures
@@ -44,7 +44,7 @@ run_script <- function(name) {
 
 # Non-interactive scripts only (skip the two Shiny apps 03 / 04).
 for (s in c("01_longdata.R", "02_trimming.R", "05_oxygen_fits.R",
-            "06_main_figures.R", "07_supp_growth_resp.R",
+            "06_main_figures.R", "07_fig6_growth_resp.R",
             "08_cutoff_sensitivity.R", "09_window_sensitivity.R",
             "10_montecarlo_N0.R", "11_simulation_recovery.R")) {
   run_script(s)
