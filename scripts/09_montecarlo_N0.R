@@ -1,5 +1,5 @@
 # =============================================================================
-# 10_montecarlo_N0.R - Monte-Carlo sensitivity of respiration R to N0
+# 09_montecarlo_N0.R - Monte-Carlo sensitivity of respiration R to N0
 # =============================================================================
 # For each (Taxon, Replicate), treats the fitted N0 as the mean and samples N0
 # across a grid of CV values, propagating the uncertainty into R = K*O2_ref/N0
@@ -226,4 +226,4 @@ if (isTRUE(SAVE_PLOTS) && nrow(series_summary_all) > 0) {
   ggplot2::ggsave(fig("N0_MC_ourmodel_R_rel_sd_by_taxon_ALL.pdf"), p_box, width = 12, height = 8)
 }
 
-message("08_montecarlo_N0: done.")
+message("09_montecarlo_N0: done.")

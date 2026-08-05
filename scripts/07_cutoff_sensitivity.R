@@ -1,5 +1,5 @@
 # =============================================================================
-# 08_cutoff_sensitivity.R - Reviewer sensitivity test: O2_norm >= 0.5
+# 07_cutoff_sensitivity.R - Reviewer sensitivity test: O2_norm >= 0.5
 # =============================================================================
 # Re-fits the normalised O2 model twice per (Taxon, Replicate): once on the full
 # trimmed window and once using only points with Oxygen_norm >= 0.5, then

@@ -1,5 +1,5 @@
 # =============================================================================
-# 09_window_sensitivity.R - Reviewer robustness test: how much do K, R and
+# 08_window_sensitivity.R - Reviewer robustness test: how much do K, R and
 # per-cell respiration depend on the manual fit window?
 # =============================================================================
 # manual_fit_windows.csv sets both edges on all 75 curves and the choice moves
@@ -11,7 +11,7 @@
 #   INPUT   results/tables/Oxygen_Data_Filtered.csv, manual_fit_windows.csv, data/Ninoc.csv
 #   OUTPUT  results/tables/window_sensitivity_percurve.csv
 #           results/figures/Fig_window_sensitivity.png
-#   RUN     Rscript scripts/09_window_sensitivity.R
+#   RUN     Rscript scripts/08_window_sensitivity.R
 # =============================================================================
 
 # ---- locate scripts/ dir and source shared config ---------------------------

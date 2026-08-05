@@ -1,5 +1,5 @@
 # =============================================================================
-# 12_temperature_cue.R - Temperature-gradient growth / respiration / CUE (Fig 7)
+# 11_temperature_cue.R - Temperature-gradient growth / respiration / CUE (Fig 7)
 # =============================================================================
 # Fits the normalised O2 model per (Taxon, Temperature, Replicate), reconstructs
 # N0 from a fixed inoculation density + fitted r, converts to carbon fluxes and
@@ -405,7 +405,7 @@ fit_T_params_only <- function(df, yvar) {
 
 results_filtered <- results %>%
   dplyr::filter(fit_ok, growth_C_fg_per_hr > 0, resp_C_fg_per_hr > 0)
-message("10_temperature_cue: ", nrow(results_filtered), " good rows for TPC fits.")
+message("11_temperature_cue: ", nrow(results_filtered), " good rows for TPC fits.")
 
 p_growth <- fit_T_plot(results_filtered, "growth_C_fg_per_hr",
                        expression(Growth ~ (fg~C~h^{-1})), TRUE)
@@ -432,4 +432,4 @@ combo_plot <- patchwork::wrap_plots(p_growth, p_resp, p_cue, ncol = 3) +
 ggplot2::ggsave(fig("Fig_7_SharpeSchoolfield_Temperature_Fits_NEWformula.pdf"),
                 combo_plot, width = 12, height = 4, dpi = 600)
 
-message("10_temperature_cue: Fig 7 + TPC params written.")
+message("11_temperature_cue: Fig 7 + TPC params written.")

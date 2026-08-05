@@ -1,5 +1,5 @@
 # =============================================================================
-# 13_joint_hierarchical.R
+# 12_joint_rK_estimator.R
 #   Joint hierarchical fit that PROPAGATES the within-curve r-K covariance
 #   into the taxon-level estimates, instead of discarding vcov() as the
 #   two-stage pipeline does. This version converges (R-hat ~1.00 in seconds).
@@ -24,9 +24,9 @@
 #   taxon-level answer, with honest uncertainty.
 #
 # INPUT   results/tables/oxygen_fit_curves.csv, oxygen_results_with_R.csv
-# OUTPUT  results/rds/joint_hierarchical.rds
+# OUTPUT  results/rds/joint_rK_estimator.rds
 #         results/tables/joint_vs_twostage_uncertainty.csv
-# RUN     Rscript scripts/13_joint_hierarchical.R          (needs rstan)
+# RUN     Rscript scripts/12_joint_rK_estimator.R          (needs rstan)
 # =============================================================================
 
 .this_dir <- {
@@ -97,7 +97,7 @@ sm  <- stan_model(model_code = stan_code)
 fit <- sampling(sm, data = list(N=N,J=J,tax=tax,y=y,S=S),
                 chains = 4, iter = 2000, warmup = 1000, seed = 1,
                 refresh = 500, control = list(adapt_delta = 0.95))
-saveRDS(fit, file.path(rds_dir, "joint_hierarchical.rds"))
+saveRDS(fit, file.path(rds_dir, "joint_rK_estimator.rds"))
 
 rh <- max(summary(fit)$summary[,"Rhat"], na.rm = TRUE)
 message(sprintf("      max R-hat = %.4f  %s", rh,

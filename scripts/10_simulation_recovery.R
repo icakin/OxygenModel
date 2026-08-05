@@ -1,5 +1,5 @@
 # =============================================================================
-# 11_simulation_recovery.R - Synthetic parameter-recovery validation (Fig S2)
+# 10_simulation_recovery.R - Synthetic parameter-recovery validation (Fig S2)
 # =============================================================================
 # Simulates noisy normalised-O2 trajectories from the model across grids of true
 # r, true per-cell R, sampling interval, duration and noise, mimics trimming
@@ -156,5 +156,5 @@ ggplot2::ggsave(fig("Fig_S2_synthetic_param_recovery_combined.pdf"), synthetic_f
 ggplot2::ggsave(fig("Fig_S2_synthetic_param_recovery_combined.png"), synthetic_fig,
                 width = 9, height = 4, dpi = 300)
 
-message("09_simulation_recovery: ", sum(sim_results$converged), "/", nrow(sim_results),
+message("10_simulation_recovery: ", sum(sim_results$converged), "/", nrow(sim_results),
         " fits converged. Fig S2 written.")
