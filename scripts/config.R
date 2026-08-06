@@ -87,7 +87,7 @@ TAXON_CELL_SIZES_CSV   <- file.path(data_dir, "taxon_cell_sizes.csv")
 
 # ===== The normalised O2 respiration model ===================================
 #   O2_norm(t) = O2_0 + (K / r) * (1 - exp(r * t))    (N0 fixed to 1 in the fit)
-# Per-cell respiration is reconstructed afterwards as  R = K * O2_ref / N0.
+# Per-cell respiration R is reconstructed afterwards from N0 (see N0_METHOD below).
 resp_model <- function(r, K, t, O2_0) {
   O2_0 + (K / r) * (1 - exp(r * t))
 }
@@ -113,13 +113,12 @@ MAPE_MAX         <- 0.15
 USE_DRAWDOWN_WINDOW <- FALSE
 FIT_DRAWDOWN_FRAC   <- 0.45
 
-# ===== USER INPUT: inoculation density (Ninoc) ===============================
-# Inoculation density (cells / L). This anchors N0 and therefore absolute
-# growth / respiration (and Fig 6, and the N0 Monte-Carlo).
+# ===== USER INPUT: inoculation density (Ninoc) - FALLBACK ONLY ===============
+# Only used when N0_METHOD = "initial" (the default depletion-anchored method
+# derives N0 from FC_Final instead - see below). Inoculation density (cells / L).
 #
-# TWO WAYS to supply it (05_oxygen_fits.R):
-#   (a) Per-curve CSV (preferred, like the original pipeline): put a file at
-#       data/Ninoc.csv (or data/Ninoc_and_deltaTime_to_N0.csv) with columns
+# TWO WAYS to supply it (05_oxygen_fits.R), for the "initial" fallback:
+#   (a) Per-curve CSV: data/Ninoc.csv with columns
 #         Taxon, Replicate, N_inoculation_cells_per_L, [delta_Ninoc_to_N0_min]
 #       If delta_Ninoc_to_N0_min is present it overrides the trimming-derived
 #       delay for that curve; otherwise the delay from 02 is used.
@@ -149,11 +148,10 @@ load_ninoc_table <- function() {
   tb[, c("Taxon", "Replicate", "N_inoculation_cells_per_L", "delta_Ninoc_to_N0_min")]
 }
 
-# N0 anchoring for per-cell respiration.
-#   TRUE  = N0 = N_inoc * exp(r * delta), delta = time from inoculation to the
-#           trim start (recorded per curve by 02_trimming as delta_Ninoc_to_N0_min).
-#   FALSE = N0 = N_inoc (anchor at consumption onset; removes the exp(r*delta)
-#           amplification of fit noise into respiration).
+# N0 anchoring for the "initial" fallback ONLY (used when N0_METHOD = "initial";
+# the default depletion-anchored method below does not use this flag).
+#   TRUE  = N0 = N_inoc * exp(r * delta), delta = inoculation -> trim start.
+#   FALSE = N0 = N_inoc (anchor at consumption onset).
 N0_BACKPROJECT <- TRUE
 
 # Minutes between inoculation and the FIRST O2 reading. Only used as a fallback
@@ -381,4 +379,4 @@ save_png_pdf <- function(plot, path_noext, width, height, dpi = 600) {
 message("config.R loaded: base_dir = ", base_dir)
 message("  Project: bacterial O2 respiration (Taxon x Replicate) | figures-only pipeline")
 message("  N_inoc = ", N_inoculation_cells_per_L, " cells/L | cell C = ",
-        round(CELL_CARBON_FG_PER_CELL, 2), " fg | backproject N0 = ", N0_BACKPROJECT)
+        round(CELL_CARBON_FG_PER_CELL, 2), " fg | N0 method = ", N0_METHOD)
