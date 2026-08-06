@@ -160,6 +160,59 @@ N0_BACKPROJECT <- TRUE
 # additive offset when 02's per-curve delta is unavailable. Set to your protocol.
 INOC_DELAY_MIN <- 0
 
+# ===== Depletion-anchored N0 (default method) ================================
+# N0 is derived from the FINAL flow-cytometry count (OD_r_FC_r.csv, FC_Final),
+# projected back to the fit start over the interval during which growth actually
+# occurred:
+#     N0 = FC_Final * FC_TO_CELLS_PER_L * exp(-r * (t_depletion - fit_start))
+# t_depletion = the time each vial reaches DEPLETION_FRAC of its starting O2, i.e.
+# when O2 runs out and aerobic growth stops. This uses the true growth interval and
+# removes the -r*delta geometric coupling of the initial-count back-projection
+# (the artefact that made per-cell R anti-correlate with growth). r and the fit
+# windows are unchanged; only N0 (and therefore R, CUE) changes.
+# Set N0_METHOD <- "initial" to fall back to the old N_inoc * exp(r*delta) route.
+N0_METHOD         <- "depletion"   # "depletion" (default) or "initial"
+DEPLETION_FRAC    <- 0.10          # O2 fraction remaining that marks growth-stop (90% depleted)
+FC_TO_CELLS_PER_L <- 909916        # FC events -> cells/L (dilution x sample-volume calibration);
+                                   # sets ABSOLUTE scale only - slope and relative R are independent of it.
+OD_FC_CSV         <- file.path(data_dir, "OD_r_FC_r.csv")
+
+# Per-vial O2 depletion time from the full raw series (LONG_CSV). Returns
+# Taxon, Replicate, t_depletion_min, O2_start, depleted (FALSE = threshold never
+# reached within the recording; the recording end is then used as a lower bound).
+load_depletion_table <- function() {
+  if (!file.exists(LONG_CSV)) return(NULL)
+  raw <- tryCatch(readr::read_csv(LONG_CSV, show_col_types = FALSE), error = function(e) NULL)
+  if (is.null(raw) || !all(c("Taxon", "Replicate", "Time", "Oxygen") %in% names(raw))) return(NULL)
+  raw <- raw[order(raw$Taxon, raw$Replicate, raw$Time), ]
+  out <- by(raw, list(raw$Taxon, raw$Replicate), function(g) {
+    if (nrow(g) < 3) return(NULL)
+    o0  <- mean(head(g$Oxygen, 3), na.rm = TRUE)
+    hit <- which(g$Oxygen <= DEPLETION_FRAC * o0)
+    reached <- length(hit) > 0
+    data.frame(Taxon = as.character(g$Taxon[1]), Replicate = as.character(g$Replicate[1]),
+               t_depletion_min = if (reached) g$Time[hit[1]] else max(g$Time, na.rm = TRUE),
+               O2_start = o0, depleted = reached, stringsAsFactors = FALSE)
+  })
+  do.call(rbind, out)
+}
+
+# Final flow-cytometry counts (events) per curve, from OD_r_FC_r.csv.
+load_fc_final <- function() {
+  if (!file.exists(OD_FC_CSV)) return(NULL)
+  tb <- tryCatch(readr::read_csv(OD_FC_CSV, show_col_types = FALSE), error = function(e) NULL)
+  if (is.null(tb)) return(NULL)
+  names(tb) <- trimws(names(tb))
+  if (!all(c("Taxon", "Replicate", "FC_Final") %in% names(tb))) return(NULL)
+  data.frame(Taxon = as.character(tb$Taxon), Replicate = as.character(tb$Replicate),
+             FC_Final = as.numeric(tb$FC_Final), stringsAsFactors = FALSE)
+}
+
+# Depletion-anchored N0 (cells/L): back-project FC_Final to the fit start.
+n0_depletion <- function(FC_Final, r_per_min, t_depletion_min, fit_start_min) {
+  FC_Final * FC_TO_CELLS_PER_L * exp(-r_per_min * (t_depletion_min - fit_start_min))
+}
+
 # ===== USER INPUT: cell carbon ===============================================
 # A bacterial cell modelled as a rod (prolate capsule): a cylinder of length
 # (CELL_LENGTH_UM - CELL_WIDTH_UM) capped by two hemispheres of diameter

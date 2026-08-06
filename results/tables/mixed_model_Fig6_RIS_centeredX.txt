@@ -3,27 +3,30 @@ Linear mixed model fit by maximum likelihood . t-tests use Satterthwaite's
 Formula: log_G ~ log_Rc + (1 + log_Rc | Taxon)
    Data: rm_df2
 
-     AIC      BIC   logLik deviance df.resid 
-  -148.8   -134.9     80.4   -160.8       69 
+      AIC       BIC    logLik -2*log(L)  df.resid 
+   -150.8    -136.9      81.4    -162.8        69 
 
 Scaled residuals: 
      Min       1Q   Median       3Q      Max 
--2.37209 -0.39793  0.00939  0.43269  2.36282 
+-2.70326 -0.37194  0.03834  0.44078  2.49379 
 
 Random effects:
  Groups   Name        Variance Std.Dev. Corr 
- Taxon    (Intercept) 0.037452 0.19352       
-          log_Rc      0.026971 0.16423  -0.90
- Residual             0.002912 0.05396       
+ Taxon    (Intercept) 0.03807  0.19511       
+          log_Rc      0.01085  0.10418  -1.00
+ Residual             0.00292  0.05404       
 Number of obs: 75, groups:  Taxon, 15
 
 Fixed effects:
-            Estimate Std. Error       df t value Pr(>|t|)    
-(Intercept)  1.92204    0.05136 10.21835   37.42 2.85e-12 ***
-log_Rc       0.20757    0.06233  9.20755    3.33  0.00853 ** 
+            Estimate Std. Error      df t value Pr(>|t|)    
+(Intercept)  1.93633    0.05114 8.70868  37.863 5.73e-11 ***
+log_Rc       0.28337    0.05378 9.97444   5.269 0.000366 ***
 ---
-Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 
 Correlation of Fixed Effects:
        (Intr)
-log_Rc -0.620
+log_Rc -0.591
+optimizer (nloptwrap) convergence code: 0 (OK)
+boundary (singular) fit: see help('isSingular')
+
