@@ -171,8 +171,11 @@ INOC_DELAY_MIN <- 0
 # Set N0_METHOD <- "initial" to fall back to the old N_inoc * exp(r*delta) route.
 N0_METHOD         <- "depletion"   # "depletion" (default) or "initial"
 DEPLETION_FRAC    <- 0.10          # O2 fraction remaining that marks growth-stop (90% depleted)
-FC_TO_CELLS_PER_L <- 909916        # FC events -> cells/L (dilution x sample-volume calibration);
-                                   # sets ABSOLUTE scale only - slope and relative R are independent of it.
+FC_TO_CELLS_PER_L <- 10255100      # FC events/uL -> cells/L. Derived from the dilution chain in the
+                                   # methods: (500/490) * (500/50) * (502.5/500) = 10.2551 total dilution,
+                                   # times 1e6 (uL -> L) = 10,255,100. Sets ABSOLUTE scale only; slope and
+                                   # relative R are independent of it. (Previously 909916, a placeholder
+                                   # tuned to a target median R, which implied an impossible <1x dilution.)
 OD_FC_CSV         <- file.path(data_dir, "OD_r_FC_r.csv")
 
 # Per-vial O2 depletion time from the full raw series (LONG_CSV). Returns

@@ -462,12 +462,38 @@ if (nrow(rm_df) < 8 || dplyr::n_distinct(rm_df$Taxon) < 2) {
   rm_df2 <- rm_df %>% dplyr::mutate(log_Rc = log_R - x0)
 
   mm <- suppressWarnings(lmerTest::lmer(log_G ~ log_Rc + (1 + log_Rc | Taxon), data = rm_df2, REML = FALSE))
-  utils::capture.output(summary(mm), file = file.path(tables_dir, "mixed_model_Fig6_RIS_centeredX.txt"))
+
+  # The per-taxon random-slope model above pins its random-effects correlation to
+  # -1.00 (15 taxa cannot support a random intercept AND a correlated random
+  # slope), so its fixed-effect SE / df / p come from a degenerate covariance and
+  # are not defensible as printed. Its POINT estimates (global slope, per-taxon
+  # shrinkage slopes) are fine and still drive Fig 6a/6b. For the REPORTED
+  # fixed-effect inference we refit a non-singular model: uncorrelated random
+  # slope (1 + log_Rc || Taxon), falling back to random-intercept-only
+  # (1 | Taxon) if that is singular too, and write ITS summary as the model of
+  # record. fixef()/vcov() are structure-independent, so log_Rc is available in
+  # every case.
+  mm_inf <- suppressWarnings(lmerTest::lmer(log_G ~ log_Rc + (1 + log_Rc || Taxon), data = rm_df2, REML = FALSE))
+  mm_inf_structure <- "(1 + log_Rc || Taxon)  [uncorrelated random slope]"
+  if (lme4::isSingular(mm_inf)) {
+    mm_inf <- suppressWarnings(lmerTest::lmer(log_G ~ log_Rc + (1 | Taxon), data = rm_df2, REML = FALSE))
+    mm_inf_structure <- "(1 | Taxon)  [random intercept only; uncorrelated random slope also singular]"
+  }
+  message("  Fig 6 reported fixed-effect slope from non-singular model: ", mm_inf_structure,
+          if (lme4::isSingular(mm_inf)) "  [WARNING: still singular]" else "  [non-singular]")
+  utils::capture.output(
+    cat("Fig 6 fixed-effect inference (slope, SE, df, p) reported from a NON-SINGULAR model:\n  ",
+        mm_inf_structure, "\n",
+        "The full (1 + log_Rc | Taxon) model is singular (RE correlation = -1.00) and is used only\n",
+        "for the point estimates displayed in Fig 6a/6b, not for the reported SE / df / p.\n\n", sep = ""),
+    summary(mm_inf), file = file.path(tables_dir, "mixed_model_Fig6_RIS_centeredX.txt"))
   fe <- lme4::fixef(mm)
 
-  re_tbl <- lme4::ranef(mm)$Taxon %>% as.data.frame() %>% tibble::rownames_to_column("Taxon") %>%
+  re_raw <- as.data.frame(lme4::ranef(mm)$Taxon)
+  re_tbl <- tibble::rownames_to_column(re_raw, "Taxon") %>%
     dplyr::transmute(Taxon = factor(Taxon, levels = levels(rm_df2$Taxon)),
-                     b0 = .data[["(Intercept)"]], b1 = .data[["log_Rc"]])
+                     b0 = .data[["(Intercept)"]],
+                     b1 = if ("log_Rc" %in% names(re_raw)) .data[["log_Rc"]] else 0)
 
   rm_collapsed <- rm_df2 %>% dplyr::left_join(re_tbl, by = "Taxon") %>%
     dplyr::mutate(log_G_collapsed = log_G - b0)

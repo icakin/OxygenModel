@@ -1,32 +1,33 @@
+Fig 6 fixed-effect inference (slope, SE, df, p) reported from a NON-SINGULAR model:
+  (1 | Taxon)  [random intercept only; uncorrelated random slope also singular]
+The full (1 + log_Rc | Taxon) model is singular (RE correlation = -1.00) and is used only
+for the point estimates displayed in Fig 6a/6b, not for the reported SE / df / p.
+
 Linear mixed model fit by maximum likelihood . t-tests use Satterthwaite's
   method [lmerModLmerTest]
-Formula: log_G ~ log_Rc + (1 + log_Rc | Taxon)
+Formula: log_G ~ log_Rc + (1 | Taxon)
    Data: rm_df2
 
       AIC       BIC    logLik -2*log(L)  df.resid 
-   -150.8    -136.9      81.4    -162.8        69 
+   -153.5    -144.2      80.7    -161.5        71 
 
 Scaled residuals: 
-     Min       1Q   Median       3Q      Max 
--2.70326 -0.37194  0.03834  0.44078  2.49379 
+    Min      1Q  Median      3Q     Max 
+-3.4170 -0.2781  0.0904  0.4291  2.3681 
 
 Random effects:
- Groups   Name        Variance Std.Dev. Corr 
- Taxon    (Intercept) 0.03807  0.19511       
-          log_Rc      0.01085  0.10418  -1.00
- Residual             0.00292  0.05404       
+ Groups   Name        Variance Std.Dev.
+ Taxon    (Intercept) 0.027991 0.16731 
+ Residual             0.003175 0.05635 
 Number of obs: 75, groups:  Taxon, 15
 
 Fixed effects:
-            Estimate Std. Error      df t value Pr(>|t|)    
-(Intercept)  1.93633    0.05114 8.70868  37.863 5.73e-11 ***
-log_Rc       0.28337    0.05378 9.97444   5.269 0.000366 ***
+            Estimate Std. Error       df t value Pr(>|t|)    
+(Intercept)  1.95266    0.04369 13.12232  44.698 9.93e-16 ***
+log_Rc       0.26387    0.07215 52.55644   3.657  0.00059 ***
 ---
 Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 
 Correlation of Fixed Effects:
        (Intr)
-log_Rc -0.591
-optimizer (nloptwrap) convergence code: 0 (OK)
-boundary (singular) fit: see help('isSingular')
-
+log_Rc 0.000 
