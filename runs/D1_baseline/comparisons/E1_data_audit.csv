@@ -1,0 +1,7 @@
+file,n_rows,n_cols,columns,n_missing_cells,cols_with_missing,n_taxa,n_series,bytes,consumed_by,units
+Cell_Counts.csv,75,6,"Taxon, Replicate, OD_Initial, OD_Final, FC_Initial, FC_Final",0,none,15,75,3161,"04_experiment_inputs.R app only, as a taxa fallback",OD600: absorbance; FC: cells / uL (nominal)
+Ninoc.csv,75,4,"Taxon, Replicate, N_inoculation_cells_per_L, delta_Ninoc_to_N0_min",0,none,15,75,2389,05_oxygen_fits.R via config::load_ninoc_table(),N_inoculation_cells_per_L: cells / L; delta: min
+OD_r_FC_r.csv,75,8,"Taxon, Replicate, OD_Initial, OD_Final, FC_Initial, FC_Final, Oxygen_r, Time",0,none,15,75,4345,"06_main_figures.R (Figs 3/4/5, method effects)",OD600: absorbance; FC: cells / uL (nominal); Time: min
+Oxygen_Data_Filtered_CUE.csv,3265,5,"Taxon, Temperature, Replicate, Time, Oxygen",0,none,1,4,85253,10_temperature_cue.R only (config CUE_CSV),Temperature: deg C; Time: min; Oxygen: mg O2 / L
+Oxygen_Data_Long.csv,15450,4,"Time, Taxon, Replicate, Oxygen",0,none,15,75,420945,01_longdata.R -> 02 -> 05/07 (config OXYGEN_LONG_CSV),Time: min; Oxygen: mg O2 / L
+taxon_cell_sizes.csv,15,6,"Taxon, cell_width_um, cell_length_um, cell_volume_um3, carbon_density_fg_per_um3, cell_carbon_fg",0,none,15,NA,746,config::cell_carbon_of() -> 05_oxygen_fits.R,"um, um^3, fg C / um^3, fg C / cell"

@@ -1,0 +1,29 @@
+table,class,n_rows_ref,n_rows_new,n_cols_compared,max_abs_diff,max_rel_diff,worst_column,note
+data_Fig6_pooled.csv,NOT REGENERATED,75,NA,0,NA,NA,NA,no counterpart in modular
+data_Fig6_RIS_COLLAPSED_centeredX.csv,NOT REGENERATED,75,NA,0,NA,NA,NA,no counterpart in modular
+Fig6_between_taxon_means.csv,NOT REGENERATED,15,NA,0,NA,NA,NA,no counterpart in modular
+Fig6_per_taxon_slopes.csv,NOT REGENERATED,15,NA,0,NA,NA,NA,no counterpart in modular
+Fig6_taxon_specific_lines_COLLAPSED_centeredX_EXTENDED.csv,NOT REGENERATED,1800,NA,0,NA,NA,NA,no counterpart in modular
+Fig6b_taxon_specific_slopes.csv,NOT REGENERATED,15,NA,0,NA,NA,NA,no counterpart in modular
+growth_rates_combined.csv,IDENTICAL,75,75,6,0,0,r_O2,
+method_effects_estimates.csv,IDENTICAL,3,3,3,1.2597561882543573e-14,6.915415698317854e-13,CI_lower,
+method_effects_significance.csv,DIVERGENT,3,3,5,6.707017149809591e-5,2.6842257319205137e-4,p.value,aligned by row order (no key columns)
+N0_MC_ourmodel_overall_summary_ALL.csv,IDENTICAL,4,4,7,4.440892098500626e-16,9.971548247776855e-16,R_rel_sd_max,
+N0_MC_ourmodel_taxon_summary_ALL.csv,IDENTICAL,60,60,7,4.440892098500626e-16,1.1292028178564176e-15,R_rel_sd_med,
+Oxygen_All_Long.csv,IDENTICAL,15450,15450,1,0,0,Oxygen,
+Oxygen_Curve_Code_Key.csv,IDENTICAL,75,75,2,NA,NA,NA,
+Oxygen_Data_Filtered.csv,IDENTICAL,9462,9462,2,4.440892098500626e-15,9.378769949844653e-16,O2_fit,
+Oxygen_Data_Smoothed_Trimmed.csv,IDENTICAL,9462,9462,5,4.440892098500626e-15,9.378769949844653e-16,O2_fit,
+oxygen_fit_curves.csv,IDENTICAL,8035,8035,12,0,0,Time0_min,
+oxygen_fit_results.csv,IDENTICAL,75,75,10,0,0,r_per_minute,
+oxygen_model_comparison_O2_ge_0.5_summary.csv,IDENTICAL,1,1,11,0,0,n_paired_fits,aligned by row order (no key columns)
+oxygen_model_results_good_only_NEWformula.csv,IDENTICAL,24,24,17,0,0,N0_cells_per_mL,
+oxygen_model_results_main.csv,IDENTICAL,75,75,9,0,0,r_per_minute,
+oxygen_model_results_O2_ge_0.5.csv,IDENTICAL,75,75,9,0,0,r_per_minute,
+oxygen_results_with_R.csv,IDENTICAL,75,75,19,0,0,r_per_minute,
+Oxygen_Trimmed_Series_Metadata.csv,IDENTICAL,75,75,15,4.547473508864641e-13,8.726119177836718e-16,main_run_score,
+SharpeSchoolfield_Temperature_Params_NEWformula.csv,IDENTICAL,3,3,8,1.7763568394002505e-14,4.8237403055738834e-15,E_lwr_eV,
+Skipped_Series_Log.csv,IDENTICAL,0,0,2,NA,NA,NA,
+synthetic_parameter_recovery_results.csv,DIVERGENT,12150,12150,12,5.33858155460365e-8,1.1451235281799376e-5,r_est,aligned by row order (no key columns)
+Table_S2_synthetic_parameter_recovery_summary.csv,DIVERGENT,27,27,11,1.2732073289764556e-8,9.08610431686947e-6,R_rel_bias,
+Table_S3_oxygen_model_comparison_O2_ge_0.5.csv,IDENTICAL,75,75,8,0,0,r_main,
