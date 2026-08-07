@@ -1,0 +1,790 @@
+---
+title: "D2: Reconciling the biomass measurements, and testing both $N_0$ back-calculations"
+subtitle: "Does the published Pseudomonas CUE result change under a better-supported $N_0$?"
+author: "OxygenModel D-series"
+date: today
+date-format: "YYYY-MM-DD"
+format:
+  pdf:
+    documentclass: scrartcl
+    papersize: a4
+    geometry:
+      - top=22mm
+      - bottom=22mm
+      - left=20mm
+      - right=20mm
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    colorlinks: true
+    fig-pos: "H"
+    include-in-header: ../_shared/header.tex
+bibliography: ../_shared/references.bib
+execute:
+  echo: false
+  warning: false
+  message: false
+knitr:
+  opts_chunk:
+    dev: "pdf"
+---
+
+```{r setup}
+suppressPackageStartupMessages({
+  library(tidyverse); library(knitr); library(jsonlite)
+})
+
+BASE <- normalizePath("../..", mustWork = TRUE)
+CMP  <- file.path(BASE, "runs", "D2_analysis")
+rd   <- function(f) suppressWarnings(suppressMessages(
+  readr::read_csv(file.path(CMP, f), show_col_types = FALSE, progress = FALSE)))
+# env/versions.json feeds the provenance footer only - no number in this report
+# depends on it. It is written by scripts/00_install.R, whose output shape has
+# changed over time (the Quarto / PDF-engine fields were dropped when the
+# installer stopped requiring Quarto), and it arrives with the packaging change
+# rather than with this report. So read it defensively: a missing file or a
+# missing field degrades that one row to "not recorded" instead of aborting the
+# render.
+VERS <- local({
+  p <- file.path(BASE, "env", "versions.json")
+  if (file.exists(p)) jsonlite::fromJSON(p) else list()
+})
+vg <- function(..., default = "not recorded") {
+  x <- VERS
+  for (k in c(...)) {
+    if (!is.list(x) || is.null(x[[k]])) return(default)
+    x <- x[[k]]
+  }
+  x <- as.character(x)
+  if (!length(x) || is.na(x[1]) || !nzchar(x[1])) default else x[1]
+}
+
+kb <- function(x, ...) knitr::kable(x, booktabs = TRUE, linesep = "", ...)
+kbs <- function(x, caption = NULL, ...) {
+  if (!is.null(caption)) {
+    caption <- gsub("([#$%&_{}])", "\\\\\\1", caption)
+    caption <- gsub("\\^", "\\\\textasciicircum{}", caption)
+    caption <- gsub("~", "\\\\textasciitilde{}", caption)
+  }
+  k <- knitr::kable(x, booktabs = TRUE, linesep = "", format = "latex",
+                    caption = caption, ...)
+  knitr::asis_output(paste0("\n\\begingroup\\footnotesize\n",
+                            paste(k, collapse = "\n"), "\n\\endgroup\n"))
+}
+sci <- function(x, d = 2) formatC(x, format = "e", digits = d)
+
+a1m  <- rd("A1_CellCounts_is_taxon_mean.csv")
+a1c  <- rd("A1_CellCounts_vs_ODFC_columns.csv")
+a2r  <- rd("A2_three_way_density_per_replicate.csv")
+a2t  <- rd("A2_three_way_density_by_taxon.csv")
+a2s  <- rd("A2_pairwise_ratio_summary.csv")
+a2a  <- rd("A2_conversion_assumptions.csv")
+a3p  <- rd("A3_Ninoc_provenance_candidates.csv")
+a3s  <- rd("A3_Ninoc_structure_by_taxon.csv")
+a4   <- rd("A4_agreement_published_vs_perrep.csv")
+b1   <- rd("B1_exponential_growth_check.csv")
+b1s  <- rd("B1_growth_check_summary.csv") |> tibble::deframe()
+b1t  <- rd("B1_growth_check_by_taxon.csv")
+b2   <- rd("B2_N0_both_routes_per_replicate.csv")
+b2s  <- rd("B2_N0_ratio_summary.csv") |> tibble::deframe()
+b2t  <- rd("B2_N0_ratio_by_taxon.csv")
+b2r  <- rd("B2_N0_ratio_vs_r.csv")
+b3t  <- rd("B3_R_and_CUE_by_taxon.csv")
+b3e  <- rd("B3_effect_sizes_vs_window_choice.csv")
+c1   <- rd("C1_thermal_parameters_three_routes.csv")
+c2   <- rd("C2_per_temperature_three_routes.csv")
+c3   <- rd("C3_growth_carbon_Topt_three_routes.csv")
+c4   <- rd("C4_optima_three_routes.csv")
+c4v  <- rd("C4_conclusion_holds_three_routes.csv")
+PSEUDO_SCALE <- as.numeric(readLines(file.path(CMP, "C0_pseudomonas_scale.txt")))
+
+# One accessor over both summary vectors; keys are unique between them.
+g <- function(v) as.numeric(if (v %in% names(b2s)) b2s[[v]] else b1s[[v]])
+rat <- function(k) a2s$median[a2s$ratio == k]
+```
+
+# Subsequent developments {.unnumbered}
+
+::: {.callout-important title="Added 2026-08-07 — read before quoting any absolute number below"}
+This report was written against commit `ed5e1a6`. It is the record of what was
+found **at that time**; it has not been re-run. Three things changed on `main`
+afterwards, and this preamble was added without re-rendering the analysis.
+
+1. **The backward route is now the default.** `dc0951c` (2026-08-06) introduced
+   depletion-anchored $N_0$ and `config.R` ships `N0_METHOD <- "depletion"` —
+   the route this report argues for. Its recommendation is implemented, not
+   pending. The forward route survives as the `"initial"` fallback.
+
+2. **`FC_TO_CELLS_PER_L` was re-derived.** `1cb16fb` (2026-08-07) replaced
+   `909916` — a placeholder tuned to a target median $R$, implying an impossible
+   sub-1× dilution — with `10255100`, derived from the stated dilution chain.
+   This sets the **absolute** respiration and CUE scale only. **The absolute
+   per-cell respiration figures in this report predate that change and should
+   not be quoted as current.** Relative results and every conclusion about
+   *ordering* or *optima* are unaffected.
+
+3. **`data/Ninoc.csv` was rewritten, but its values did not move.** `5ed17b0`
+   (2026-08-03) rewrites all 75 rows; the median `N_inoculation_cells_per_L`
+   shifts only from 24,605,191 to 24,788,014 cells/L (median row-wise ratio
+   1.000×). **The central finding below — that the two independent density
+   measurements agree with each other and both sit ~49–66× above `N_inoc` —
+   is therefore not resolved by that rewrite and stands as current.**
+
+Recomputing under the new constant and default route is out of scope for the
+documentation change that added this note, and has not been done.
+:::
+
+# Verdict {.unnumbered}
+
+```{=latex}
+\begin{verdictbox}
+```
+
+**The published temperature result does not change. The absolute respiration
+and CUE values do — by a factor of about 57.**
+
+Two independent measurements of the cells in a vial — the recorded $\mathrm{OD}_{600}$ and
+the flow-cytometry count — agree with each other to a median factor of
+`r sprintf("%.2f", rat("ratio_FC_over_measuredOD"))`. The quantity the pipeline
+actually uses, `N_inoculation_cells_per_L`, agrees with neither: it is a median
+**`r sprintf("%.0f", rat("ratio_FC_over_Ninoc"))`×** below the flow-cytometry
+count and **`r sprintf("%.0f", rat("ratio_measuredOD_over_Ninoc"))`×** below the
+OD-derived count. Because $R = K\,O_{2,\text{ref}} / N_0$, per-cell respiration
+is high by that factor.
+
+The shared assumption of both back-calculations survives testing:
+flow-cytometry fold change matches $\exp(r\,\Delta t)$ at the oxygen-derived $r$
+to a median of **`r sprintf("%.3f", g("ratio median"))`**, with
+`r as.integer(g("n within a factor of 2"))` of `r as.integer(g("n replicates"))`
+replicates inside a factor of two. So the forward route's $\exp(r\delta)$
+correction is the right *size* (median `r sprintf("%.2f", g("forward amplification exp(r*delta) median"))`×);
+it is the starting value that is wrong. Backward over forward has median
+**`r sprintf("%.0f", g("ratio backward/forward MEDIAN"))`**
+(range `r sprintf("%.0f", g("ratio backward/forward min"))`–`r sprintf("%.0f", g("ratio backward/forward max"))`),
+and all `r as.integer(g("n kept for the backward route"))` retained replicates
+exceed 10. For scale, D1 measured the fit-window choice as worth at most a
+factor of 1.23 on $R$.
+
+**But the published *Pseudomonas* temperature conclusion is untouched.** Growth
+$T_{opt}$ (`r sprintf("%.2f", c4$Topt_growth_rate_C[c4$route=="forward"])` °C)
+and respiration $T_{opt}$ (`r sprintf("%.2f", c4$Topt_respiration_C[c4$route=="forward"])` °C)
+are identical to eight significant figures under all three routes, because
+neither quantity contains $N_0$. The CUE optimum moves from
+**`r sprintf("%.2f", c4$Topt_CUE_C[c4$route=="forward"])` °C** to
+**`r sprintf("%.2f", c4$Topt_CUE_C[c4$route=="backward"])` °C** — a shift of
+`r sprintf("%.2f", abs(c4$shift_vs_D1_CUE[c4$route=="backward"]))` °C — and
+stays 1.5–1.7 °C below the growth optimum, inside the stated 30–35 °C band. The
+paper's stated conclusion holds under every route tested (§4.4).
+
+**One correction to the brief.** `06_main_figures.R` does *not* use the
+taxon-mean initial count. It reads `data/OD_r_FC_r.csv`, whose `FC_Initial` is
+per-replicate; the recomputation reproduces D1's `r_FC` to exactly 0. Using the
+taxon mean instead would *degrade* the published validation ($R^2$
+`r sprintf("%.3f", a4$R2_lmer_fitted[a4$variant=="r_O2 ~ r_FC, per-replicate initial (AS PUBLISHED)"])`
+→ `r sprintf("%.3f", a4$R2_lmer_fitted[a4$variant=="r_O2 ~ r_FC, taxon-mean initial (COUNTERFACTUAL)"])`).
+The published choice is the better one.
+
+```{=latex}
+\end{verdictbox}
+```
+
+# What this report does, and what it does not
+
+Per-cell respiration is $R = K\,O_{2,\text{ref}} / N_0$, where $N_0$ is the cell
+density at the start of the fitted oxygen trajectory. In a sealed, headspace-free
+vial that density cannot be measured without destroying the closed-system
+measurement, so it is back-calculated. This is a considered design choice, not a
+defect; the question is only which back-calculation the data support.
+
+`config.R` sets `N0_BACKPROJECT <- TRUE`, giving
+
+$$N_0^{\text{forward}} = N_{\text{inoc}} \cdot e^{r\delta}
+\qquad\Longrightarrow\qquad
+\log R = \log K + \log O_{2,\text{ref}} - \log N_{\text{inoc}} - r\delta$$
+
+so respiration is an explicit *decreasing* function of the fitted growth rate.
+The alternative uses the endpoint count from the same vial:
+
+$$N_0^{\text{backward}} = N_{\text{end}} \cdot e^{-r\,(t_{\text{end}} - t_0)}$$
+
+Both assume exponential growth — the forward route across the roughly 45 min
+stabilisation period the paper itself says the oxygen signal cannot be trusted
+in, the backward route only across the interval the oxygen model already assumes
+it over. In the *Candida* application of this method the equivalent term could
+only be **bounded**, because no endpoint biomass existed. Here it can be
+**measured**.
+
+**Nothing was changed.** `N0_BACKPROJECT` remains `TRUE`, the QC thresholds, fit
+windows, exclusions and cell sizes are untouched. `10_temperature_cue.R` gained
+an `OXYMODEL_N0_ROUTE` switch on the same pattern as D1's `OXYMODEL_RESULTS`,
+defaulting to the published behaviour; the forward run reproduces
+`runs/D1_baseline` byte-identically. `results/`, `data/` and `runs/D1_baseline/`
+were verified unchanged by checksum (57 of 57 sums OK, 0 failed).
+
+# Part A — the three statements of cell density
+
+## The conversions, and every assumption in them
+
+```{r a2-assum}
+a2a |> dplyr::transmute(Quantity = quantity, Value = value,
+                        Source = stringr::str_trunc(source, 62)) |>
+  kbs(caption = "Every conversion assumption. The two that are ASSUMED rather than stated are flagged as such.")
+```
+
+The flow-cytometry dilution chain, shown as arithmetic:
+
+$$\underbrace{\frac{500}{490}}_{\text{glutaraldehyde}} \times
+  \underbrace{\frac{500}{50}}_{\text{PBS}} \times
+  \underbrace{\frac{502.5}{500}}_{\text{SYBR}} = 10.2551$$
+
+so an original culture density is the CytoFLEX reading × 10.2551 × 10⁶ cells L$^{-1}$,
+**on the assumption that the instrument reports events per $\mu$L of the measured,
+diluted sample**. The paper does not state the output unit; this is the
+instrument default and is the largest single assumption in Part A.
+
+No taxon-specific $\mathrm{OD}_{600}$-to-cell factor is published for these 15 environmental
+isolates. The generic E. coli reference, 8 × 10⁸ cells mL$^{-1}$ per OD unit
+(documented spread 5 × 10⁸ – 2 × 10⁹), is used for all of them, and a range is
+carried rather than a point estimate. **The OD route needs no dilution-chain
+assumption at all**, which is what makes the agreement below load-bearing.
+
+## The three-way table
+
+```{r a2-taxon}
+a2t |>
+  dplyr::transmute(Taxon,
+                   `Measured OD` = sci(measuredOD_cells_per_L_med, 2),
+                   `Flow cyt.` = sci(FC_cells_per_L_med, 2),
+                   `N_inoc` = sci(N_inoc_med, 2),
+                   `FC / N_inoc` = sprintf("%.0f", r_FCoverNinoc),
+                   `OD / N_inoc` = sprintf("%.0f", r_measODoverNinoc),
+                   `FC / OD` = sprintf("%.2f", r_FCovermeasOD)) |>
+  kbs(caption = "Cell density at inoculation, cells per litre, taxon medians. The stated-OD column (4.00e+08 for every taxon by construction) and the median OD600 are omitted for width. The last three columns are the pairwise ratios.",
+      align = "lrrrrrr")
+```
+
+```{r a2-ratios}
+a2s |>
+  dplyr::transmute(Ratio = stringr::str_remove(ratio, "^ratio_"),
+                   n, Min = sprintf("%.2f", min), `25th` = sprintf("%.2f", q25),
+                   Median = sprintf("%.2f", median), `75th` = sprintf("%.2f", q75),
+                   Max = sprintf("%.2f", max),
+                   `Fold spread` = sprintf("%.0f", fold_spread)) |>
+  kbs(caption = "Pairwise ratios across all 75 replicates.", align = "lrrrrrrr")
+```
+
+![The three statements of cell density, per taxon and replicate. The two measurements overlap; the value the pipeline uses sits roughly two decades to their left.](figures/fig1_three_way_density.pdf){#fig-density width=100%}
+
+Three things follow.
+
+1. **The two measurements agree.** Flow cytometry over measured $\mathrm{OD}_{600}$ has median
+   `r sprintf("%.2f", rat("ratio_FC_over_measuredOD"))`. Two entirely independent
+   instruments, one of which needs no dilution assumption, land within about 26% of
+   each other at the median.
+2. **`N_inoc` agrees with neither**, and is low by a median
+   `r sprintf("%.0f", rat("ratio_FC_over_Ninoc"))`× against flow cytometry and
+   `r sprintf("%.0f", rat("ratio_measuredOD_over_Ninoc"))`× against $\mathrm{OD}_{600}$.
+3. **The vials were not at the stated $\mathrm{OD}_{600}$.** The recorded OD at aliquoting is a
+   median `r sprintf("%.2f", rat("ratio_measuredOD_over_statedOD"))`× the paper's
+   stated 0.0005, ranging
+   `r sprintf("%.2f", a2s$min[a2s$ratio=="ratio_measuredOD_over_statedOD"])`–`r sprintf("%.2f", a2s$max[a2s$ratio=="ratio_measuredOD_over_statedOD"])`×.
+
+## Where does `N_inoc` come from? Not recovered.
+
+```{r a3}
+a3p |>
+  dplyr::transmute(`Candidate predictor` = candidate, n,
+                   `Implied factor (median)` = sci(implied_factor_median, 3),
+                   `CV of the factor` = sprintf("%.3f", implied_factor_CV),
+                   `Fold spread` = sprintf("%.0f", implied_factor_fold_spread),
+                   `log-log r` = ifelse(is.na(pearson_r_log_log), "--",
+                                        sprintf("%.3f", pearson_r_log_log))) |>
+  kbs(caption = "If N_inoc were built from a candidate by a constant factor, the implied factor would be constant (CV = 0). Sorted by CV; none is close.")
+```
+
+The best candidate, the per-replicate `FC_Initial`, still leaves the implied
+factor spread over
+`r sprintf("%.0f", a3p$implied_factor_fold_spread[1])`-fold (CV
+`r sprintf("%.2f", a3p$implied_factor_CV[1])`). `OD_Initial` explains nothing
+(log-log $r$ = `r sprintf("%.4f", a3p$pearson_r_log_log[a3p$candidate=="OD_Initial"])`).
+`N_inoc` is per-replicate, not per-taxon: all
+`r sum(a3s$n_distinct_Ninoc == 5)` taxa have 5 distinct values.
+
+**And it carries a signature no measurement produces.** In
+`r sum(abs(a3s$Ninoc_fold_within_taxon - 3) < 1e-5)` of the 15 taxa the largest
+`N_inoc` is exactly 3.000000× the smallest, agreeing to 7–8 significant figures:
+
+```{r a3-three}
+a3s |> dplyr::filter(abs(Ninoc_fold_within_taxon - 3) < 1e-5) |>
+  dplyr::transmute(Taxon, `min N_inoc` = format(Ninoc_min, big.mark = ","),
+                   `max N_inoc` = format(Ninoc_max, big.mark = ","),
+                   `max / min` = sprintf("%.8f", Ninoc_fold_within_taxon)) |>
+  kb(caption = "Taxa whose N_inoc range is exactly a factor of three.")
+```
+
+Taken together — no measured quantity reproduces it, and it has an exact
+arithmetic structure — **the provenance of `N_inoc` could not be recovered from
+the deposit.** That is a finding, not a failure of effort, and it is the first
+item in §6.
+
+## `Cell_Counts.csv`, and the parallel-vial reference density
+
+**Confirmed for 15 of 15 taxa.** `data/Cell_Counts.csv` `FC_Initial` is constant
+across replicates and equals the rounded arithmetic mean of the per-replicate
+values in `data/OD_r_FC_r.csv`. The two files are otherwise identical:
+
+```{r a1}
+a1c |> dplyr::transmute(Column = quantity, `Rows` = n_rows,
+                        `Identical` = n_identical, `Differing` = n_differing) |>
+  kb(caption = "data/Cell_Counts.csv against data/OD_r_FC_r.csv, row by row.")
+```
+
+So `Cell_Counts.csv` `FC_Initial` is **a summary of the at-inoculation counts,
+not the parallel-vial 45-minute reference density the paper describes**. Searching
+the deposit for that parallel-vial measurement finds nothing: no file, column or
+timestamp corresponds to it. It exists in the methods and not in the data.
+
+D1 separately established that `data/Cell_Counts.csv` is read by no automated
+stage at all — only by the `04` Shiny app, as a fallback list of taxon names.
+
+## The effect of the taxon-mean-versus-per-replicate choice
+
+```{r a4}
+a4 |>
+  dplyr::transmute(Variant = stringr::str_trunc(variant, 46), n,
+                   Intercept = sprintf("%.5f", lmer_intercept),
+                   Slope = sprintf("%.4f", lmer_slope),
+                   `R2 (mixed)` = sprintf("%.4f", R2_lmer_fitted),
+                   `R2 (OLS)` = sprintf("%.4f", R2_ols),
+                   `BA bias` = sprintf("%.6f", BA_bias),
+                   `% within LoA` = sprintf("%.1f", BA_pct_within)) |>
+  kbs(caption = "Growth-rate agreement against the O2 method. Row 2 is what 06_main_figures.R actually computes, and it reproduces D1's growth_rates_combined.csv to exactly 0.",
+      align = "lrrrrrrr")
+```
+
+The brief anticipated that the published validation used the taxon-mean
+initial, putting all replicate-level variation in the numerator. **It does not.**
+The counterfactual is worth reporting anyway, because it shows the published
+choice is the right one: switching to the taxon mean would drop $R^2$ from
+`r sprintf("%.3f", a4$R2_lmer_fitted[3-1])` to
+`r sprintf("%.3f", a4$R2_lmer_fitted[3])`, move the slope from
+`r sprintf("%.3f", a4$lmer_slope[2])` to `r sprintf("%.3f", a4$lmer_slope[3])`,
+and raise the Bland–Altman bias from
+`r sprintf("%.6f", a4$BA_bias[2])` to `r sprintf("%.6f", a4$BA_bias[3])` min$^{-1}$.
+
+# Part B — the two back-calculations
+
+## Test the shared assumption first
+
+Both routes stand or fall on exponential growth at the oxygen-derived $r$ over
+their interval. That is testable here, because the flow-cytometry fold change is
+an independent measurement of the same thing.
+
+```{r b1-sum}
+tibble::tibble(Statistic = names(b1s), Value = sprintf("%.4f", as.numeric(b1s))) |>
+  kb(caption = "FC_Final / (FC_Initial x exp(r x duration)), all 75 replicates.")
+```
+
+**The assumption holds.** The ratio has median
+`r sprintf("%.3f", g("ratio median"))`, IQR
+`r sprintf("%.3f", g("ratio 25th pct"))`–`r sprintf("%.3f", g("ratio 75th pct"))`,
+and `r as.integer(g("n within a factor of 2"))` of
+`r as.integer(g("n replicates"))` replicates sit within a factor of two. The
+median $r_{FC}/r_{O_2}$ is `r sprintf("%.3f", g("median r_FC / r_O2"))`. This is
+also an independent validation of the oxygen-derived growth rate itself.
+
+One replicate is excluded from the backward route, with the reason recorded:
+
+```{r b1-excl}
+b1 |> dplyr::filter(!keep_backward) |>
+  dplyr::transmute(Taxon, Replicate,
+                   `Observed fold` = sprintf("%.2f", fold_observed),
+                   `Predicted fold` = sprintf("%.2f", fold_predicted),
+                   Ratio = sprintf("%.3f", growth_check_ratio),
+                   Reason = "growth saturated or cells died") |>
+  kb(caption = "Excluded from the backward route (kept if the ratio is within a factor of 2).")
+```
+
+A stricter factor-of-1.5 window would exclude
+`r as.integer(g_strict <- b1s[["n excluded (strict, factor 1.5)"]])` replicates
+instead of `r as.integer(b1s[["n excluded (primary, factor 2)"]])`; the
+conclusions below are unchanged either way.
+
+![(A) The shared assumption: observed against predicted fold change, log-log, with the 1:1 line. (B) The disagreement between the two routes against the fitted growth rate.](figures/fig2_growth_check_and_ratio.pdf){#fig-check width=100%}
+
+## Getting $t_{\text{end}}$ right
+
+The deposit gives two irreconcilable readings, and this matters — they differ by
+almost an order of magnitude in $N_0$:
+
+- **End of run.** The paper says endpoint samples were taken "from the
+  corresponding SensorDish vials at the end of the run". The oxygen runs end at
+  197–212 min. The endpoint sample time itself is not recorded.
+- **The recorded interval.** `data/OD_r_FC_r.csv` carries a `Time` column of
+  101–139 min that `06_main_figures.R` uses as the initial-to-final interval.
+
+They were tie-broken by a test that uses no endpoint at all: project the
+**measured initial** count forward to the fit-window start,
+$N_0 = N_{\text{start}}\,e^{r t_0}$, and ask which backward estimate agrees.
+
+```{r b2-tend}
+tibble::tibble(
+  `Reading of t_end` = c("the recorded OD/FC interval (101-139 min)",
+                         "the end of the oxygen run (197-212 min)"),
+  `Median agreement with the FC-start projection` = sprintf(
+    "%.3f", c(g("CHECK backward / from_FCstart (median, should be 1)"),
+              g("CHECK backward_alt / from_FCstart (median, should be 1)")))
+) |> kb(caption = "Tie-breaking t_end. A value of 1 means the backward estimate agrees with a projection that uses no endpoint at all.")
+```
+
+The recorded interval is therefore used as the primary $t_{\text{end}}$ and end-of-run
+is reported as the sensitivity. **Sensitivity:** using end-of-run instead would
+give a backward/forward ratio of
+`r sprintf("%.1f", g("ratio with t_end = last oxygen reading (median, SENSITIVITY)"))`
+rather than `r sprintf("%.0f", g("ratio backward/forward MEDIAN"))` — still far
+from 1, so the direction of the finding does not depend on this choice, only its
+size.
+
+## Both estimates, and their ratio
+
+```{r b2-sum}
+tibble::tibble(Quantity = names(b2s),
+               Value = ifelse(abs(as.numeric(b2s)) >= 1e5,
+                              sci(as.numeric(b2s), 3),
+                              sprintf("%.3f", as.numeric(b2s)))) |>
+  kbs(caption = "Both N0 routes, all replicates.")
+```
+
+```{r b2-taxon}
+b2t |>
+  dplyr::transmute(Taxon, n,
+                   `N0 forward` = sci(N0_forward_med, 2),
+                   `N0 backward` = sci(N0_backward_med, 2),
+                   `Ratio min` = sprintf("%.1f", ratio_min),
+                   `Ratio median` = sprintf("%.1f", ratio_med),
+                   `Ratio max` = sprintf("%.1f", ratio_max),
+                   `r (min^-1)` = sprintf("%.4f", r_med)) |>
+  kbs(caption = "Backward over forward, by taxon, ordered by the median ratio. Sorting by ratio also sorts by growth rate.",
+      align = "lrrrrrrr")
+```
+
+Backward over forward has median
+**`r sprintf("%.0f", g("ratio backward/forward MEDIAN"))`**, IQR
+`r sprintf("%.0f", g("ratio backward/forward 25th pct"))`–`r sprintf("%.0f", g("ratio backward/forward 75th pct"))`,
+range `r sprintf("%.1f", g("ratio backward/forward min"))`–`r sprintf("%.0f", g("ratio backward/forward max"))`.
+All `r as.integer(g("n with ratio > 10"))` retained replicates exceed 10, and
+none is near 1.
+
+**What this measures, rather than bounds.** The forward route's $\exp(r\delta)$
+correction has median
+`r sprintf("%.2f", g("forward amplification exp(r*delta) median"))`, and Part B's
+growth check says growth over $\delta$ really is exponential at that rate. So the
+correction is the right *size*. The gap is almost entirely in the starting value:
+`N_inoc` is the median `r sprintf("%.0f", rat("ratio_FC_over_Ninoc"))`× below the
+measured count found in Part A, and
+$`r sprintf("%.0f", rat("ratio_FC_over_Ninoc"))` \times e^{r t_0}/e^{r\delta}
+\approx `r sprintf("%.0f", g("ratio backward/forward MEDIAN"))`$. **The forward
+correction is not too large or too small; the number it is applied to is wrong.**
+
+## And the disagreement is not a constant
+
+```{r b2-r}
+b2r |> dplyr::transmute(Model = model,
+                        Intercept = sprintf("%.3f", intercept),
+                        Slope = sprintf("%.2f", slope),
+                        `SE` = sprintf("%.3f", slope_se),
+                        `p` = sci(p_value, 2),
+                        `R2` = sprintf("%.3f", r_squared),
+                        `Spearman rho` = ifelse(is.na(spearman_rho), "--",
+                                                sprintf("%.3f", spearman_rho))) |>
+  kb(caption = "log(backward / forward) against the fitted growth rate.")
+```
+
+$\log(\text{ratio})$ against $r$ has slope
+`r sprintf("%.1f", b2r$slope[1])` min ($p$ = `r sci(b2r$p_value[1], 2)`,
+$R^2$ = `r sprintf("%.3f", b2r$r_squared[1])`, Spearman
+$\rho$ = `r sprintf("%.3f", b2r$spearman_rho[1])`). Fast-growing taxa disagree by
+100–200×, slow-growing ones by about 30×. **Correcting $N_0$ would therefore change
+both the level of $R$ and its dependence on $r$** — and it is that dependence
+that sets between-taxon respiration activation energies. This is the
+method-level finding, not a quirk of this dataset.
+
+## What it does to $R$ and CUE
+
+```{r b3}
+b3t |>
+  dplyr::transmute(Taxon, n,
+                   `R forward` = sprintf("%.0f", R_C_fwd_med),
+                   `R backward` = sprintf("%.1f", R_C_bwd_med),
+                   `R ratio` = sprintf("%.4f", R_ratio_med),
+                   `G` = sprintf("%.1f", G_C_med),
+                   `CUE fwd` = sprintf("%.3f", CUE_fwd_med),
+                   `CUE bwd` = sprintf("%.3f", CUE_bwd_med)) |>
+  kbs(caption = "Per-cell respiration R and growth G in fg C per cell per hour, and CUE, under each route. G does not depend on N0.",
+      align = "lrrrrrrr")
+```
+
+```{r b3-scale}
+b3e |> dplyr::transmute(Effect = effect,
+                        `Fold change in R` = sprintf("%.2f", fold_change_in_R),
+                        Direction = direction) |>
+  kbs(caption = "Every effect on R that D1 and D2 have measured, on one scale.")
+```
+
+Set against D1's sensitivity: the **fit-window choice moves $R$ by at most a
+factor of 1.23; the $N_0$ route moves it by
+`r sprintf("%.0f", b3e$fold_change_in_R[b3e$effect=="N0 route: forward -> backward, effect on R (median)"])`.**
+The two are not comparable, and the window sensitivity is not the binding
+uncertainty in this analysis.
+
+# Part C — the published temperature result under three routes
+
+The temperature experiment has **no endpoint biomass** — `data/Oxygen_Data_Filtered_CUE.csv`
+carries only `Taxon, Temperature, Replicate, Time, Oxygen` — so a true backward
+route cannot be computed from it. *Pseudomonas* appears in both datasets, so the
+backward route transfers that taxon's measured backward/forward ratio,
+`r sprintf("%.2f", PSEUDO_SCALE)`. The third route, $N_0 = N_{\text{inoc}}$ with no
+back-calculation at all, is retained as a **lower bound and labelled as such,
+not as a candidate**.
+
+```{r c4}
+c4 |>
+  dplyr::transmute(Route = route,
+                   `Growth Topt` = sprintf("%.2f", Topt_growth_rate_C),
+                   `Respiration Topt` = sprintf("%.2f", Topt_respiration_C),
+                   `CUE Topt` = sprintf("%.2f", Topt_CUE_C),
+                   `CUE - growth` = sprintf("%.2f", gap_CUE_minus_growth_C),
+                   `shift vs D1 (growth)` = sci(shift_vs_D1_growth, 1),
+                   `shift vs D1 (resp)` = sci(shift_vs_D1_resp, 1),
+                   `shift vs D1 (CUE)` = sprintf("%+.3f", shift_vs_D1_CUE)) |>
+  kbs(caption = "All optima, in degrees C, under the three N0 routes, against D1's published-route baseline.",
+      align = "lrrrrrrr")
+```
+
+```{r c1}
+c1 |>
+  dplyr::transmute(Route = route, Response = response, `Best model` = best_model,
+                   `Topt` = sprintf("%.2f", Topt_C),
+                   `E (eV)` = sprintf("%.3f", E_eV),
+                   `E 95% CI` = sprintf("[%.3f, %.3f]", E_lwr_eV, E_upr_eV),
+                   `Eh (eV)` = sprintf("%.3f", Eh_eV)) |>
+  kbs(caption = "The Sharpe-Schoolfield / Arrhenius parameters written by the pipeline under each route.",
+      align = "lllrrlr")
+```
+
+**Growth and respiration $T_{opt}$ do not move at all** — the shifts are
+`r sci(max(abs(c4$shift_vs_D1_growth)), 1)` and
+`r sci(max(abs(c4$shift_vs_D1_resp)), 1)` °C, i.e. numerical noise. This is
+structural rather than lucky: the published parameter table fits growth $T_{opt}$
+to `growth_r_per_hr`, the raw growth rate, which contains no $N_0$; and
+respiration in `10_temperature_cue.R` is $K \cdot O_2^{\text{ref}}$ in carbon
+units, which never contained $N_0$ either. **Only CUE can move**, and it moves by
+`r sprintf("%.2f", abs(c4$shift_vs_D1_CUE[c4$route=="backward"]))` °C (backward)
+and `r sprintf("%.2f", abs(c4$shift_vs_D1_CUE[c4$route=="none"]))` °C (lower
+bound).
+
+For completeness, Fig 7 panel A plots growth in *carbon* units, which does
+contain $N_0$. Its optimum is at the edge of the measured range under every
+route (`r sprintf("%.0f", c3$Topt_C[1])` °C, best model
+`r c3$best_model[1]` — a monotonic Arrhenius, i.e. no interior optimum), so it
+too is unmoved.
+
+```{r c2}
+c2 |>
+  dplyr::select(route, Temperature, N0_cells_per_mL, growth_C_fg_per_hr,
+                resp_C_fg_per_hr, resp_to_growth_C, CUE) |>
+  dplyr::transmute(Route = route, `T (C)` = Temperature,
+                   `N0 (cells/mL)` = sci(N0_cells_per_mL, 2),
+                   `Growth (fg C/h)` = sci(growth_C_fg_per_hr, 2),
+                   `Resp (fg C/h)` = sci(resp_C_fg_per_hr, 2),
+                   `Resp:growth` = sprintf("%.2f", resp_to_growth_C),
+                   CUE = sprintf("%.4f", CUE)) |>
+  kbs(caption = "Per-temperature means, four replicates each, under all three routes.",
+      align = "lrrrrrr")
+```
+
+![Carbon use efficiency against temperature under the three routes. The level moves by a factor of about 4.5; the optimum (dotted) moves by 0.13 degrees C.](figures/fig3_cue_three_routes.pdf){#fig-cue width=90%}
+
+```{r c4v}
+c4v |>
+  dplyr::transmute(Route = route,
+                   `CUE at 20 C` = sprintf("%.4f", CUE_at_lowest_T),
+                   `Peak CUE` = sprintf("%.4f", CUE_at_peak),
+                   `T of observed peak` = T_of_observed_CUE_peak,
+                   `CUE at 40 C` = sprintf("%.4f", CUE_at_highest_T),
+                   `Increases` = ifelse(increases_with_T, "yes", "no"),
+                   `Declines at 40 C` = ifelse(declines_at_highest_T, "yes", "no"),
+                   `Peaks in 30-35 C` = ifelse(peaks_near_growth_optimum_30_35, "yes", "no"),
+                   `Conclusion holds` = ifelse(conclusion_holds, "YES", "no")) |>
+  kbs(caption = "Does the paper's stated conclusion survive each route?", align = "lrrrrlllc")
+```
+
+What *does* change is the level: peak CUE is
+`r sprintf("%.3f", c4v$CUE_at_peak[c4v$route=="forward"])` (forward),
+`r sprintf("%.3f", c4v$CUE_at_peak[c4v$route=="backward"])` (backward) and
+`r sprintf("%.3f", c4v$CUE_at_peak[c4v$route=="none"])` (lower bound), and the
+respiration-to-growth ratio at the optimum goes from
+`r sprintf("%.2f", c2$resp_to_growth_C[c2$route=="forward" & c2$Temperature==32])`
+to
+`r sprintf("%.3f", c2$resp_to_growth_C[c2$route=="backward" & c2$Temperature==32])`.
+One honest nuance: under the lower bound the *model-free* per-temperature CUE
+peak moves from 32 °C to
+`r c4v$T_of_observed_CUE_peak[c4v$route=="none"]` °C even though the fitted
+optimum does not. Under the backward route — the actual candidate — both are
+unchanged.
+
+## Bottom line {.unnumbered}
+
+```{=latex}
+\begin{verdictbox}
+```
+
+**No. The published *Pseudomonas* temperature result does not change materially
+under a better-supported $N_0$.** Growth $T_{opt}$ stays at
+`r sprintf("%.2f", c4$Topt_growth_rate_C[c4$route=="backward"])` °C and
+respiration $T_{opt}$ at
+`r sprintf("%.2f", c4$Topt_respiration_C[c4$route=="backward"])` °C — identical
+to eight significant figures, because neither quantity contains $N_0$. The CUE
+optimum moves from `r sprintf("%.2f", c4$Topt_CUE_C[c4$route=="forward"])` °C to
+`r sprintf("%.2f", c4$Topt_CUE_C[c4$route=="backward"])` °C, a shift of
+`r sprintf("%.2f", abs(c4$shift_vs_D1_CUE[c4$route=="backward"]))` °C, and remains
+`r sprintf("%.2f", abs(c4$gap_CUE_minus_growth_C[c4$route=="backward"]))` °C below
+the growth optimum and inside the stated 30–35 °C band. CUE still rises with
+temperature, peaks at the growth optimum and falls at 40 °C under all three
+routes, including the lower bound. **The conclusion as stated in the paper is
+robust to the $N_0$ question.**
+
+What is *not* robust is the absolute magnitude. Peak CUE is
+`r sprintf("%.2f", c4v$CUE_at_peak[c4v$route=="forward"])` as published and
+`r sprintf("%.2f", c4v$CUE_at_peak[c4v$route=="backward"])` under the backward
+route, and per-cell respiration across the bacterial set falls by a median factor
+of `r sprintf("%.0f", b3e$fold_change_in_R[b3e$effect=="N0 route: forward -> backward, effect on R (median)"])`.
+Any statement about how much carbon a cell respires, or about the absolute value
+of CUE, rests on `N_inoc` — whose provenance could not be recovered, and which
+sits `r sprintf("%.0f", rat("ratio_measuredOD_over_Ninoc"))`–`r sprintf("%.0f", rat("ratio_FC_over_Ninoc"))`×
+below both independent measurements in the deposit. That is the part that
+warrants a conversation with the authors, and it does not require a correction to
+the temperature figure.
+
+```{=latex}
+\end{verdictbox}
+```
+
+# Questions for the authors {#sec-questions}
+
+Everything here is something the deposited data and the published methods could
+not settle.
+
+1. **What is `N_inoculation_cells_per_L`, and how was it produced?** It matches
+   no measured quantity in the deposit (best candidate leaves a
+   `r sprintf("%.0f", a3p$implied_factor_fold_spread[1])`-fold spread in the
+   implied factor), sits
+   `r sprintf("%.0f", rat("ratio_measuredOD_over_Ninoc"))`–`r sprintf("%.0f", rat("ratio_FC_over_Ninoc"))`×
+   below both independent measurements, and in
+   `r sum(abs(a3s$Ninoc_fold_within_taxon - 3) < 1e-5)` of 15 taxa has a
+   within-taxon range of exactly 3.000000. This is the single most consequential
+   unknown: it scales every absolute respiration number in the paper.
+2. **What unit does the CytoFLEX S output represent here** — events per $\mu$L of the
+   diluted sample, or already dilution-corrected? The whole flow-cytometry arm of
+   Part A rests on this, though the OD cross-check does not.
+3. **Where are the parallel-vial 45-minute reference densities?** The methods
+   describe them; no file, column or timestamp in the deposit corresponds to
+   them. `Cell_Counts.csv` is *not* them — it is the rounded taxon mean of the
+   at-inoculation counts (confirmed 15/15).
+4. **When were the endpoint $\mathrm{OD}_{600}$/FC samples actually taken?** The text says at
+   the end of the run (197–212 min); `OD_r_FC_r.csv` carries an interval of
+   101–139 min. The two give $N_0$ estimates a factor of about 10 apart.
+5. **Why is the recorded $\mathrm{OD}_{600}$ at aliquoting a median
+   `r sprintf("%.1f", rat("ratio_measuredOD_over_statedOD"))`× the stated 0.0005**,
+   ranging up to `r sprintf("%.1f", a2s$max[a2s$ratio=="ratio_measuredOD_over_statedOD"])`×?
+6. **Is there a taxon-specific $\mathrm{OD}_{600}$-to-cells calibration** for these 15
+   isolates? Part A had to use a generic E. coli factor for all of them.
+7. **Was the deposited `Oxygen_r` in `OD_r_FC_r.csv` produced by the pipeline in
+   this repository?** It differs from both the modular and the original-script
+   growth rates (e.g. *Acinetobacter* R1: 0.019508 in the file, 0.019436 modular,
+   0.019498 original).
+
+# Which findings are method-level {.unnumbered}
+
+**Method-level** — these apply to the published analysis *and* to the *Candida*
+application of the same method, and to any future dataset:
+
+- The forward route makes $\log R$ an explicit decreasing function of the fitted
+  $r$. Whenever $N_{\text{inoc}}$ is uncertain, that uncertainty enters $R$
+  *correlated with $r$*, not as a constant offset (§3.5: slope
+  `r sprintf("%.1f", b2r$slope[1])` min, $R^2$ = `r sprintf("%.3f", b2r$r_squared[1])`).
+  Between-taxon orderings of respiration activation energy are therefore not
+  robust to it.
+- Growth and respiration thermal optima, as this pipeline computes them, are
+  *structurally* independent of $N_0$. Only CUE can move. Any $N_0$ debate is a
+  debate about CUE levels and about $R$, never about $T_{opt}$ for growth or
+  respiration.
+- Where an endpoint biomass measurement exists, the back-projection can be
+  **measured** rather than bounded — and the measurement here says the
+  correction's *form* was right and its *anchor* was not.
+
+**Dataset-specific** — these are about this deposit only:
+
+- The `N_inoc` provenance gap and its exact-factor-of-three signature.
+- The missing parallel-vial reference densities.
+- The $t_{\text{end}}$ ambiguity.
+- The recorded $\mathrm{OD}_{600}$ being about 2.9× the stated value.
+
+# Provenance {.unnumbered}
+
+```{r prov}
+tibble::tibble(
+  Field = c("Report", "Git commit (environment record)", "Branch",
+            "Environment recorded (UTC)", "R", "Platform", "OS",
+            "renv lockfile", "Quarto", "PDF engine",
+            "Baseline compared against", "Route output trees"),
+  Value = c("D2 — N0 reconciliation and dual route",
+            vg("git", "commit"), vg("git", "branch"), vg("recorded_utc"),
+            vg("R", "version"), vg("R", "platform"), vg("R", "os"),
+            paste0("renv.lock — ", vg("renv", "n_packages"), " packages, R ",
+                   vg("renv", "lockfile_R")),
+            vg("quarto", "version"),
+            paste0(vg("pdf_engine", "name"), " — ",
+                   stringr::str_trunc(vg("pdf_engine", "version"), 44)),
+            "runs/D1_baseline (D1, verified byte-identical)",
+            "runs/D2_forward, runs/D2_backward, runs/D2_none")
+) |> kb(caption = "Provenance. Environment fields come from env/versions.json.")
+```
+
+## Where every number came from {.unnumbered}
+
+```{r sources}
+tibble::tribble(
+  ~Section, ~Source,
+  "§2.1 conversion assumptions", "runs/D2_analysis/A2_conversion_assumptions.csv",
+  "§2.2 three-way table",        "runs/D2_analysis/A2_three_way_density_by_taxon.csv, A2_three_way_density_per_replicate.csv",
+  "§2.2 pairwise ratios",        "runs/D2_analysis/A2_pairwise_ratio_summary.csv",
+  "§2.3 N_inoc provenance",      "runs/D2_analysis/A3_Ninoc_provenance_candidates.csv, A3_Ninoc_structure_by_taxon.csv",
+  "§2.4 Cell_Counts check",      "runs/D2_analysis/A1_CellCounts_is_taxon_mean.csv, A1_CellCounts_vs_ODFC_columns.csv",
+  "§2.5 r_FC recomputation",     "runs/D2_analysis/A4_agreement_published_vs_perrep.csv",
+  "§3.1 growth check",           "runs/D2_analysis/B1_growth_check_summary.csv, B1_exponential_growth_check.csv",
+  "§3.2 t_end tie-break",        "runs/D2_analysis/B2_N0_ratio_summary.csv",
+  "§3.3 N0 both routes",         "runs/D2_analysis/B2_N0_ratio_summary.csv, B2_N0_ratio_by_taxon.csv",
+  "§3.4 ratio against r",        "runs/D2_analysis/B2_N0_ratio_vs_r.csv",
+  "§3.5 R and CUE",              "runs/D2_analysis/B3_R_and_CUE_by_taxon.csv, B3_effect_sizes_vs_window_choice.csv",
+  "§4 optima, three routes",     "runs/D2_analysis/C4_optima_three_routes.csv, C1_thermal_parameters_three_routes.csv",
+  "§4 per temperature",          "runs/D2_analysis/C2_per_temperature_three_routes.csv",
+  "§4 Fig 7 panel A optimum",    "runs/D2_analysis/C3_growth_carbon_Topt_three_routes.csv",
+  "§4 conclusion test",          "runs/D2_analysis/C4_conclusion_holds_three_routes.csv",
+  "Pseudomonas transfer scale",  "runs/D2_analysis/C0_pseudomonas_scale.txt",
+  "D1 window sensitivity (1.23x)", "runs/D1_baseline/comparisons/D2_per_quantity.csv",
+  "Figures 1-3",                 "reports/D2_n0_routes/figures/, from d2_figures.R",
+  "Provenance",                  "env/versions.json"
+) |> kbs(caption = "Number-to-source map.")
+```
+
+Artefacts are produced by `reports/D2_n0_routes/scripts/d2_partA_reconcile.R`,
+`d2_partB_routes.R`, `d2_partC_temperature.R` and `d2_figures.R`. The three route
+trees come from `10_temperature_cue.R` run with `OXYMODEL_N0_ROUTE` set; the
+forward run reproduces `runs/D1_baseline` byte-identically, which is how the
+"no default was changed" claim is verified.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

@@ -1,0 +1,8 @@
+quantity,value
+"corr(max|dK_pct|, fitted r)",0.9885475839518341
+R^2 of fitted r alone on max|dK_pct|,0.9772263257370084
+median fitted r (per min),0.02231892948367655
+arithmetic prediction 100*r*6 (%),13.391357690205933
+observed median max|dK_pct| (%),15.426285407637543
+regression coefficient vs the arithmetic prediction (1.0 = exact),1.1686473977933474
+R^2 of ALL saturation measures on max|dR_pct|,0.16796246870227663
