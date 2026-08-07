@@ -1,0 +1,7 @@
+effect,fold_change_in_R,direction
+fit-window choice (D1: max relative difference in R),1.2289896,either
+forward back-projection exp(r*delta) alone (median),3.8571632680825942,lowers R
+"N_inoc vs the measured OD600 count (median, PART A)",49.408862843441455,lowers R
+"N_inoc vs the flow-cytometry count (median, PART A)",66.03476388601185,lowers R
+"N0 route: forward -> backward, effect on R (median)",57.07359898220228,lowers R
+"N0 route: forward -> backward, effect on R (max)",496.1679711413127,lowers R

@@ -1,0 +1,20 @@
+quantity,value
+n replicates (all),75
+n kept for the backward route,74
+N0_forward median (cells/L),92737141.16126662
+"N0_backward median (cells/L), t_end = recorded interval",7003784440.00132
+"N0_backward_alt median (cells/L), t_end = last oxygen reading",591258019.7519324
+"N0_from_FCstart median (cells/L), no endpoint used",6929351079.808552
+"CHECK backward / from_FCstart (median, should be 1)",0.9904902218648235
+"CHECK backward_alt / from_FCstart (median, should be 1)",0.10330396494390515
+ratio backward/forward min,17.84487562848792
+ratio backward/forward 25th pct,42.72551930615403
+ratio backward/forward MEDIAN,57.13355624637582
+ratio backward/forward 75th pct,75.90327615795741
+ratio backward/forward max,496.1679711413126
+ratio fold spread,27.804507101703752
+n with ratio > 1,74
+n with ratio > 10,74
+forward amplification exp(r*delta) median,3.8571632680825942
+backward deflation exp(-r*(t_end-t_0)) median,0.3307779955429382
+"ratio with t_end = last oxygen reading (median, SENSITIVITY)",6.696164546592978

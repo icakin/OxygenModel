@@ -7,3 +7,31 @@ _wip_backup/
 
 # R session temp
 scripts/.RDataTmp
+
+# ---- runs/ ------------------------------------------------------------------
+# Non-canonical regeneration trees. Excluded by default because the figures and
+# .rds objects are ~47 MB; the small text tables the committed reports read at
+# render time are kept, so both .qmd files rebuild from a clean clone.
+# runs/MANIFEST.md records, per tree, exactly what is tracked and what is not.
+runs/*
+!runs/MANIFEST.md
+!runs/D1_baseline/
+runs/D1_baseline/*
+!runs/D1_baseline/comparisons/
+!runs/D2_analysis/
+# ...and within those, text tables only - never figures or model objects.
+runs/**/*.rds
+runs/**/*.tiff
+runs/**/*.png
+runs/**/*.pdf
+
+# ---- LaTeX build artefacts from `quarto render` -----------------------------
+# Scoped to reports/ ON PURPOSE. A bare `*.log` would also swallow the pipeline
+# logs, which are real output worth being able to commit.
+reports/**/*.aux
+reports/**/*.log
+reports/**/*.toc
+reports/**/*.out
+reports/**/*.tex
+# ...but the shared LaTeX preamble is a source file, not a build artefact.
+!reports/_shared/header.tex
