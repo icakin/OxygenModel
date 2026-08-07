@@ -53,7 +53,23 @@ BASE <- normalizePath("../..", mustWork = TRUE)
 RUN  <- file.path(BASE, "runs", "<run-id>")
 rd   <- function(p) suppressWarnings(suppressMessages(
   readr::read_csv(p, show_col_types = FALSE, progress = FALSE)))
-VERS <- jsonlite::fromJSON(file.path(BASE, "env", "versions.json"))
+# env/versions.json feeds the provenance footer only. Read it defensively: it is
+# written by scripts/00_install.R, whose output shape has changed over time, so a
+# missing file or a missing field should degrade one row to "not recorded"
+# rather than abort the render. Use vg("a","b") instead of VERS$a$b throughout.
+VERS <- local({
+  p <- file.path(BASE, "env", "versions.json")
+  if (file.exists(p)) jsonlite::fromJSON(p) else list()
+})
+vg <- function(..., default = "not recorded") {
+  x <- VERS
+  for (k in c(...)) {
+    if (!is.list(x) || is.null(x[[k]])) return(default)
+    x <- x[[k]]
+  }
+  x <- as.character(x)
+  if (!length(x) || is.na(x[1]) || !nzchar(x[1])) default else x[1]
+}
 ```
 
 # Verdict {.unnumbered}
@@ -95,12 +111,12 @@ tibble::tibble(
   Field = c("Report", "Git commit", "Branch", "Run date (UTC)",
             "R", "Platform", "OS", "renv lockfile", "Quarto", "PDF engine"),
   Value = c("<ID>",
-            VERS$git$commit, VERS$git$branch, VERS$recorded_utc,
-            VERS$R$version, VERS$R$platform, VERS$R$os,
-            paste0("renv.lock (", VERS$renv$n_packages, " packages, R ",
-                   VERS$renv$lockfile_R, ")"),
-            VERS$quarto$version,
-            paste0(VERS$pdf_engine$name, " - ", VERS$pdf_engine$version))
+            vg("git", "commit"), vg("git", "branch"), vg("recorded_utc"),
+            vg("R", "version"), vg("R", "platform"), vg("R", "os"),
+            paste0("renv.lock (", vg("renv", "n_packages"), " packages, R ",
+                   vg("renv", "lockfile_R"), ")"),
+            vg("quarto", "version"),
+            paste0(vg("pdf_engine", "name"), " - ", vg("pdf_engine", "version")))
 ) |> knitr::kable(booktabs = TRUE, linesep = "")
 ```
 
