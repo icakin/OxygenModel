@@ -1,0 +1,4 @@
+route,route_label,CUE_at_lowest_T,CUE_at_peak,T_of_observed_CUE_peak,CUE_at_highest_T,increases_with_T,declines_at_highest_T,fitted_CUE_Topt,peaks_near_growth_optimum_30_35,conclusion_holds
+forward,FORWARD (as published),0.12803280209940132,0.20914783605562062,32,0.035462074751485106,TRUE,TRUE,32.441471571906355,TRUE,TRUE
+backward,BACKWARD (scale transferred from the bacterial data),0.9076833064358347,0.945860146739592,32,0.7089983927455429,TRUE,TRUE,32.37458193979933,TRUE,TRUE
+none,"NONE (N0 = N_inoc; LOWER BOUND, not a candidate)",0.08709621062338561,0.11289680759011701,24,0.025044802726887166,TRUE,TRUE,32.30769230769231,TRUE,TRUE
