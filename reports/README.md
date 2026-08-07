@@ -118,10 +118,43 @@ is still unrecovered. Anyone reading D2 should treat that finding as live.
 
 ## Re-rendering these reports
 
-The committed PDFs are the deliverable. Both `.qmd` files read comparison CSVs
-from `runs/` (`runs/D1_baseline/comparisons/`, `runs/D2_analysis/`) and
-`env/versions.json`. `runs/` is **deliberately not tracked** — 58 MB of
-non-canonical output trees — so **neither report re-renders from a clean clone**.
-To re-render one you must first regenerate its artefacts with the scripts in its
-own `scripts/` folder; `RUNBOOK.md` gives the sequence. This is why the rendered
-PDF is committed rather than treated as a build product.
+**Both reports rebuild from a clean clone.** Verified 2026-08-07 by cloning the
+branch into a scratch directory and rendering each one there:
+
+```bash
+quarto render reports/D1_baseline/D1_baseline.qmd  --to pdf   # 18 pages
+quarto render reports/D2_n0_routes/D2_n0_routes.qmd --to pdf   # 16 pages
+```
+
+### What is tracked under `runs/`, and what is not
+
+The 48 small text tables the two `.qmd` files actually read — **133 KB**, in
+`runs/D1_baseline/comparisons/` and `runs/D2_analysis/`. Determined by parsing
+every read call in both sources, not by taking whole directories.
+
+Everything else under `runs/` is excluded: the figures and `.rds` model objects
+(~47 MB), `runs/D1_baseline/tables/`, `runs/D1_originals/`, and the three D2
+route trees. `runs/MANIFEST.md` records the breakdown per tree.
+
+Consequence: the **reports** rebuild, but the **comparison scripts** in each
+report's `scripts/` folder do not — they consume the excluded run outputs.
+Re-deriving the tables from scratch means re-running the pipeline first
+(`RUNBOOK.md` §5–§6). Rendering the reports needs none of that.
+
+`env/versions.json` feeds the provenance footer only; it arrives with the
+packaging change. Both reports read it defensively, so a clone without it still
+renders and that footer reads "not recorded".
+
+### Known: the committed D2 PDF is one sentence behind its source
+
+A fresh render of `D2_n0_routes.qmd` contains a sentence the committed PDF does
+not — *"Only CUE can move, and it moves by 0.07 °C (backward) and 0.13 °C (lower
+bound)."* Both the `.qmd` and the `.pdf` were committed together in `f914b88`,
+so the PDF was rendered just before the final edit to the source and never
+re-rendered.
+
+**No number is contradicted.** All 752 substantive numbers in the report match
+between the committed and freshly rendered PDFs, and both 0.07 °C and 0.13 °C
+already appear elsewhere in the committed PDF; the new sentence restates them.
+The committed PDF has deliberately **not** been overwritten — it is the record
+of what was published at the time. Re-render it whenever D2 is next revisited.
