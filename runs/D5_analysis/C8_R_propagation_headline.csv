@@ -1,0 +1,11 @@
+quantity,value
+median dt = t_depletion - fit_start (min),124.00000000000001
+median within-curve sd(log R),0.0035064384482191117
+median within-curve sd(log R) if r and K were independent,0.009182977190361393
+ratio actual / independent,0.3947165829391096
+median within-curve sd(log G) = sd(log r),0.0030467362722605904
+median observed sd(log R) across replicates,0.12121183273414925
+ratio observed / within-curve,31.130755176899733
+median share of var(log R) from var(log K),1.5530988516187416
+median share of var(log R) from dt^2 var(r),4.867197552977284
+median share of var(log R) from the 2 dt cov term,-5.418436590549373
