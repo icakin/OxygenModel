@@ -1,0 +1,816 @@
+---
+title: "D1: Baseline reproduction of the OxygenModel published results"
+subtitle: "Can a third party regenerate Cakin et al. 2026 from the deposited data today?"
+author: "OxygenModel D-series"
+date: today
+date-format: "YYYY-MM-DD"
+format:
+  pdf:
+    documentclass: scrartcl
+    papersize: a4
+    geometry:
+      - top=22mm
+      - bottom=22mm
+      - left=20mm
+      - right=20mm
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    colorlinks: true
+    fig-pos: "H"
+    include-in-header: ../_shared/header.tex
+bibliography: ../_shared/references.bib
+execute:
+  echo: false
+  warning: false
+  message: false
+knitr:
+  opts_chunk:
+    dev: "pdf"
+---
+
+```{r setup}
+suppressPackageStartupMessages({
+  library(tidyverse); library(knitr); library(jsonlite)
+})
+
+BASE <- normalizePath("../..", mustWork = TRUE)
+CMP  <- file.path(BASE, "runs", "D1_baseline", "comparisons")
+rd   <- function(f) suppressWarnings(suppressMessages(
+  readr::read_csv(file.path(CMP, f), show_col_types = FALSE, progress = FALSE)))
+VERS <- jsonlite::fromJSON(file.path(BASE, "env", "versions.json"))
+MAN  <- rd("D0_run_manifest.csv") |> tibble::deframe()
+
+kb <- function(x, ...) knitr::kable(x, booktabs = TRUE, linesep = "", ...)
+# Wide comparison tables: same kable, rendered a size down so the class labels
+# fit on one line instead of being hyphenated.
+kbs <- function(x, caption = NULL, ...) {
+  # This path emits raw LaTeX, so the caption bypasses pandoc's escaping and
+  # has to be escaped here - captions in this report contain _ and ^.
+  if (!is.null(caption)) {
+    caption <- gsub("([#$%&_{}])", "\\\\\\1", caption)
+    caption <- gsub("\\^", "\\\\textasciicircum{}", caption)
+    caption <- gsub("~", "\\\\textasciitilde{}", caption)
+  }
+  k <- knitr::kable(x, booktabs = TRUE, linesep = "", format = "latex",
+                    caption = caption, ...)
+  knitr::asis_output(paste0("\n\\begingroup\\footnotesize\n",
+                            paste(k, collapse = "\n"),
+                            "\n\\endgroup\n"))
+}
+
+# helper: format a number for prose
+fm <- function(x, d = 3) formatC(x, format = "g", digits = d)
+sci <- function(x, d = 2) formatC(x, format = "e", digits = d)
+
+d1_tab  <- rd("D1_modular_vs_committed_tables.csv")
+d1_txt  <- rd("D1_modular_vs_committed_textfiles.csv")
+d1_fig  <- rd("D1_figure_inventory.csv")
+d1_q    <- rd("D1_per_quantity.csv")
+d2_tab  <- rd("D2_modular_vs_original_tables.csv")
+d2_txt  <- rd("D2_modular_vs_original_textfiles.csv")
+d2_q    <- rd("D2_per_quantity.csv")
+d2b_tab <- rd("D2b_original_vs_committed_tables.csv")
+agr     <- rd("D3_growth_rate_agreement.csv")
+ba      <- rd("D3_bland_altman.csv")
+bat     <- rd("D3_bland_altman_by_taxon.csv")
+tpc     <- rd("D3_thermal_parameters.csv")
+cuet    <- rd("D3_cue_by_temperature.csv")
+e1      <- rd("E1_data_audit.csv")
+e2r     <- rd("E2_FC_vs_Ninoc_per_replicate.csv")
+e2t     <- rd("E2_FC_vs_Ninoc_by_taxon.csv")
+e3c     <- rd("E3_qc_gate_by_criterion.csv")
+e3g     <- rd("E3_gate_vs_manual_curation.csv") |> tibble::deframe()
+e3w     <- rd("E3_manual_vs_auto_windows.csv")
+e4o     <- rd("E4_backprojection_overall.csv") |> tibble::deframe()
+e4t     <- rd("E4_backprojection_by_taxon.csv")
+tim     <- rd("D0_stage_timings.csv")
+timo    <- rd("D0_original_timings.csv")
+
+n_ident <- sum(d1_tab$class == "IDENTICAL")
+n_div   <- sum(d1_tab$class == "DIVERGENT")
+n_nr    <- sum(d1_tab$class == "NOT REGENERATED")
+n_cmp   <- n_ident + n_div
+```
+
+# Verdict {.unnumbered}
+
+```{=latex}
+\begin{verdictbox}
+```
+
+**Yes — with two named caveats.** A third party who clones this repository
+today, runs `Rscript scripts/00_install.R` and then `bash scripts/run_all.sh`,
+regenerates **`r n_ident` of the `r n_cmp` committed tables that any script in
+the repository produces**, and of those `r n_ident`, **`r sum(d1_tab$class == "IDENTICAL" & d1_tab$max_rel_diff == 0, na.rm = TRUE)`
+agree to exactly 0.0** — bit-for-bit, not merely within tolerance. The whole run
+takes **`r sprintf("%.0f", sum(tim$seconds))` seconds** and needs no interaction.
+The two caveats are:
+
+**(1) Figure 6 is produced by no script in this repository.** Six committed
+tables, three committed text files and five committed TIFFs belong to Fig 6
+(*r* vs *R*, the pooled / between-taxon / within-taxon mixed models). The
+modular pipeline does not make them, and neither does
+`scripts/original_scripts/OxygenModel.R` — which writes three *differently
+named* Fig 6 tables whose numbers do not match the committed ones. The script
+that produced the published Figure 6 is not in the repository.
+
+**(2) `results/` did not come from `scripts/original_scripts/`.** The committed
+`results/tables/` were produced by the **modular** pipeline: they carry columns
+only the modular code writes (`fit_start_min`, `curve_code`, `O2_fit`,
+`cell_carbon_fg`), and they match this run of the modular pipeline to 0.0 while
+differing from a fresh run of the original scripts by up to
+`r sprintf("%.0f%%", 100 * max(d2b_tab$max_rel_diff[is.finite(d2b_tab$max_rel_diff)]))`.
+So D1's load-bearing check does not have the meaning it was set up to have: it
+confirms the modular pipeline is self-consistent, not that it preserves numbers
+the original scripts produced. On the bacterial $\mathrm{O}_2$ series the two implementations
+**do not agree** — growth rate *r* differs by up to
+`r sprintf("%.2f%%", 100 * d2_q$max_rel_diff[d2_q$quantity == "growth rate r (min^-1)"])`
+and the scaling parameter *K* by up to
+`r sprintf("%.0f%%", 100 * d2_q$max_rel_diff[d2_q$quantity == "scaling K"])`,
+because they fit different windows (§3.3). On the temperature/CUE experiment and
+the synthetic-recovery validation they agree to **exactly 0.0**.
+
+Nothing in the analysis was changed to reach this result. Three things had to
+change to make the pipeline *execute* unattended; all three are listed in §6.1.
+
+```{=latex}
+\end{verdictbox}
+```
+
+# What was done
+
+`icakin/OxygenModel` is the reference implementation of the oxygen-dynamics
+method published as Cakin et al. 2026 [@cakin2026oxygen]. At commit
+`` `r substr(VERS$git$commit, 1, 7)` `` the repository had just been
+restructured from four monolithic scripts into a modular pipeline
+(`config.R`, `01`–`10`, `run_all.R`), with the pre-restructure code retained
+under `scripts/original_scripts/`. The restructure had never been checked
+against the published outputs.
+
+D1 pinned the environment, made the pipeline run unattended, regenerated
+everything into a parallel output tree, and compared three trees:
+
+| Tree | What it is | Where |
+|---|---|---|
+| **COMMITTED** | the outputs in git | `results/tables`, `results/figures` |
+| **MODULAR** | this run of `config.R` + `01`–`10` | `runs/D1_baseline` |
+| **ORIGINAL** | this run of the five pre-restructure scripts | `runs/D1_originals` |
+
+The dataset is 15 bacterial taxa × 5 replicates = 75 dissolved-$\mathrm{O}_2$ series, plus a
+separate *Pseudomonas* temperature gradient (6 temperatures × 4 replicates). All
+fits use the same normalised model, with $N_0$ fixed to 1 inside the fit:
+
+$$O_2^{\text{norm}}(t) = O_{2,0} + \frac{K}{r}\left(1 - e^{rt}\right)$$
+
+fitted by `nlsLM` [@minpacklm], with per-cell respiration reconstructed
+afterwards as $R = K \cdot O_{2,\text{ref}} / N_0$.
+
+**Non-destructive.** `results/` and `data/` were verified **byte-identical**
+before and after the run by SHA-256 over all 57 files
+(`env/pre_run_checksums.txt`), not by assertion.
+
+## Wall time
+
+The full pipeline, unattended, run `` `r MAN[["run_id"]]` ``:
+
+```{r timings}
+tim |>
+  dplyr::transmute(Stage = stage, Script = basename(script), Mode = mode,
+                   `Seconds` = sprintf("%.2f", seconds), Status = status) |>
+  dplyr::bind_rows(tibble::tibble(Stage = "TOTAL", Script = "", Mode = "",
+                                  Seconds = sprintf("%.2f", sum(tim$seconds)),
+                                  Status = "")) |>
+  kb(caption = "Per-stage wall time. 03 and 04 are the Shiny apps: they are sourced as a parse-and-inputs check, never launched.")
+```
+
+For reference, the five original scripts in the scratch tree took
+`r sprintf("%.0f", sum(timo$seconds))` s in total
+(`r paste(sprintf("%s %.1f s", timo$script, timo$seconds), collapse = "; ")`).
+
+All ten stages ran. **Nothing was skipped**, silently or otherwise:
+`Skipped_Series_Log.csv` is empty, and 02 reports *kept 75 curves; skipped 0*.
+The only warnings in the whole log are two `nls.lm` `resetting 'maxiter' to 1024`
+notices from the temperature-response fits in stage 10.
+
+# Comparison D1 — modular pipeline vs the committed outputs
+
+Classification: **IDENTICAL** (max relative difference $<10^{-10}$),
+**NUMERICALLY EQUIVALENT** ($<10^{-6}$), **DIVERGENT**, **NOT REGENERATED**.
+Rows are aligned on their natural key columns; `manual_fit_windows.csv` and
+`plot_exclude_points.csv` are excluded because they are manual curation and are
+*inputs* to the run.
+
+```{r d1-tables}
+d1_tab |>
+  dplyr::transmute(
+    Table = stringr::str_trunc(table, 34),
+    Class = class,
+    `Rows` = sprintf("%d", n_rows_ref),
+    `Max abs diff` = ifelse(is.na(max_abs_diff), "--", sci(max_abs_diff, 2)),
+    `Max rel diff` = ifelse(is.na(max_rel_diff), "--", sci(max_rel_diff, 2))
+  ) |>
+  kbs(caption = "D1: every committed CSV, compared with the modular pipeline's regenerated copy. The worst-disagreeing column for each table is in D1_modular_vs_committed_columns.csv.",
+     align = "llrrr")
+```
+
+**`r n_ident` IDENTICAL, `r n_div` DIVERGENT, `r n_nr` NOT REGENERATED.**
+
+The `r n_nr` NOT REGENERATED tables are all Fig 6:
+`r paste(sprintf("\\texttt{%s}", stringr::str_replace_all(d1_tab$table[d1_tab$class == "NOT REGENERATED"], "_", "\\\\_")), collapse = ", ")`.
+Three committed text files are in the same position
+(`r paste(sprintf("\\texttt{%s}", stringr::str_replace_all(d1_txt$file[d1_txt$class == "NOT REGENERATED"], "_", "\\\\_")), collapse = ", ")`).
+
+## The three DIVERGENT tables, in detail
+
+```{r d1-div}
+d1_tab |> dplyr::filter(class == "DIVERGENT") |>
+  dplyr::transmute(Table = table, `Max rel diff` = sci(max_rel_diff, 3),
+                   `Worst column` = worst_column) |>
+  kb(caption = "D1: the only three tables that do not reproduce.")
+```
+
+- **`method_effects_significance.csv`** — worst disagreement
+  `r sci(d1_tab$max_rel_diff[d1_tab$table == "method_effects_significance.csv"], 3)`
+  relative, on `p.value`. These are `multcomp::glht` Tukey p-values, computed by
+  simulation from a multivariate normal; they are not deterministic between
+  runs. All three comparisons are non-significant in both trees, so nothing the
+  paper claims turns on it.
+- **`synthetic_parameter_recovery_results.csv`** and
+  **`Table_S2_synthetic_parameter_recovery_summary.csv`** — worst disagreement
+  `r sci(max(d1_tab$max_rel_diff[grepl("synthetic|Table_S2", d1_tab$table)]), 3)`
+  relative. This one is informative: the modular `09_simulation_recovery.R` and
+  the original `Simulation.R` agree with each other to **exactly 0.0** (§3.2), and
+  *both* differ from the committed file by roughly $10^{-5}$. The committed synthetic tables
+  were therefore produced by an earlier run, under a different R or
+  `minpack.lm` version. The bias and RMSE conclusions are unaffected at that
+  magnitude.
+
+**Is the pipeline itself deterministic?** Yes, apart from that one file. The
+whole pipeline was run twice, from a clean output tree both times; every
+regenerated table came back **byte-identical between the two runs except
+`method_effects_significance.csv`**, whose `glht` p-values moved in the fourth
+decimal place. So the `r n_div - 1` remaining DIVERGENT results are genuine
+differences from the committed files, not run-to-run noise.
+
+The two committed mixed-model text summaries reproduce with identical numbers:
+
+```{r d1-txt}
+d1_txt |>
+  dplyr::transmute(File = file, Class = class,
+                   `Lines (committed / modular)` = ifelse(is.na(n_lines_ref), "--",
+                     sprintf("%d / %d", n_lines_ref, n_lines_new)),
+                   Note = ifelse(is.na(note), "", note)) |>
+  kb(caption = "D1: committed .txt model summaries. The two that differ do so only because a newer lmerTest wraps the first line, which shifts every subsequent line.")
+```
+
+## Figures
+
+TIFFs will never be byte-identical, so figures are compared by whether the
+pipeline produces them at all; where it does, the underlying data are the tables
+above.
+
+```{r d1-figs}
+d1_fig |>
+  dplyr::filter(in_committed) |>
+  dplyr::transmute(Figure = stringr::str_trunc(figure, 46),
+                   `Modular run` = ifelse(in_modular, "yes", "NO"),
+                   `Original run` = ifelse(in_original_run, "yes", "no"),
+                   Verdict = ifelse(in_modular, "regenerated", "NOT regenerated")) |>
+  kbs(caption = "D1: the committed figures. Five Fig 6 panels are produced by neither the modular pipeline nor the original scripts; the sixth name, Fig_6_COMBINED.tiff, is emitted by the original run but from different numbers.",
+      align = "lccl")
+```
+
+`r sum(d1_fig$in_committed & d1_fig$in_modular)` of the
+`r sum(d1_fig$in_committed)` committed figures are regenerated. The
+`r sum(d1_fig$in_committed & !d1_fig$in_modular)` that are not are all Fig 6.
+`Fig_6_COMBINED.tiff` is the one case where the original scripts do emit a file
+of the same name — but `OxygenModel.R` writes it as
+`Fig_6_r_vs_R_RIS_derand_full_MAIN.tiff` plus a combined panel, and the
+committed Fig 6 *data* do not match what those scripts produce (§3.4).
+
+The run also produces `r sum(!d1_fig$in_committed & d1_fig$in_modular)` figures
+that are not committed at all — the multi-page diagnostics
+(`oxygen_trimming_diagnostics.pdf`, `oxygen_model_fit_curves.pdf`), the Monte
+Carlo panels, Fig S2 and Fig 7.
+
+# Comparison D2 — modular pipeline vs the original scripts
+
+## Do the original scripts still run?
+
+**Yes, all five, unmodified.** They were copied into a scratch tree
+(`runs/D1_originals`) and run from there; `scripts/original_scripts/` was never
+modified or executed in place. They write to `data/`, `plots/` and `Tables/`
+relative to the working directory, which the scratch tree provides.
+
+One data-provisioning fix was needed, and only in the scratch tree:
+`OxygenModel.R` hard-codes `data/Ninoc_and_deltaTime_to_N0.csv`, while the
+deposited file is `data/Ninoc.csv`. The scratch tree supplies the same file
+under both names. **No script was edited.** The minimal change that would remove
+even this would be to accept either filename, exactly as `config.R` already
+does via `NINOC_CSV_LEGACY`.
+
+## Per quantity
+
+This is the load-bearing table: not "does file X match" but "does the number the
+paper reports match".
+
+```{r d2-quant}
+d2_q |>
+  dplyr::transmute(Quantity = quantity, n = n,
+                   `Max abs diff` = ifelse(is.na(max_abs_diff), "--", sci(max_abs_diff, 2)),
+                   `Max rel diff` = ifelse(is.na(max_rel_diff), "--", sci(max_rel_diff, 2)),
+                   Verdict = verdict) |>
+  kbs(caption = "D2: modular pipeline vs the original scripts, per quantity, on identical inputs.",
+     align = "lrrrl")
+```
+
+The split is clean and it is not random:
+
+- **The temperature / CUE experiment reproduces exactly.** Every quantity from
+  `10_temperature_cue.R` versus `CUE.R` — CUE per temperature, growth and
+  respiration carbon fluxes, $T_{opt}$, $E$, $E_h$ — differs by **0.0**.
+  `CUE.R` was ported without changing a number.
+- **The synthetic parameter recovery reproduces exactly.**
+  `09_simulation_recovery.R` versus `Simulation.R`: **0.0** on all 12150 fits
+  and all 27 summary rows.
+- **The OD600 / flow-cytometry reference growth rates reproduce exactly** —
+  they are read straight from `data/OD_r_FC_r.csv` by both.
+- **The bacterial $\mathrm{O}_2$ fits do not.** *r* differs by up to
+  `r sprintf("%.2f%%", 100 * d2_q$max_rel_diff[d2_q$quantity == "growth rate r (min^-1)"])`,
+  *K* by up to `r sprintf("%.0f%%", 100 * d2_q$max_rel_diff[d2_q$quantity == "scaling K"])`,
+  total $\mathrm{O}_2$ consumed by up to
+  `r sprintf("%.0f%%", 100 * d2_q$max_rel_diff[d2_q$quantity == "total O2 consumed C_tot"])`,
+  and per-cell respiration *R* by up to
+  `r sprintf("%.0f%%", 100 * d2_q$max_rel_diff[d2_q$quantity == "per-cell respiration R"])`.
+
+## Why the bacterial fits differ
+
+Not a porting bug — a different fit window, and a deliberate one.
+
+| | Modular (`02` + `05`) | Original (`OxygenModel.R`) |
+|---|---|---|
+| Start of window | spline peak, then the manual window from the `03` app | `which.max(raw Oxygen)`, then a derivative onset trim |
+| End of window | manual window from the `03` app | second inflection between the steepest drop and the plateau |
+| Manual curation | all 75 curves have a hand-set window | none available |
+
+All 75 curves carry a manual window in
+`results/tables/manual_fit_windows.csv`. Relative to `02`'s automatic trim those
+windows start a median `r sprintf("%+.2f", median(e3w$shift_start_min))` min
+later and end a median `r sprintf("%+.2f", median(e3w$shift_end_min))` min
+earlier, giving fit windows a median
+`r sprintf("%.0f%%", 100 * median(e3w$window_ratio))` of the automatic length.
+`T_end_min` differs between the two implementations by up to
+`r sprintf("%.0f", d2_q$max_abs_diff[d2_q$quantity == "fit window length T_end (min)"])`
+minutes. Since $K$ and $C_{tot}$ are integrals over the window, a
+`r sprintf("%.0f%%", 100 * (1 - median(e3w$window_ratio)))` shorter window moves
+them far more than it moves $r$ — which is exactly the pattern in the table
+above ($r$ 0.6%, $K$ 23%, $C_{tot}$ 69%).
+
+## Which implementation produced the committed results?
+
+The modular one. Running the originals and comparing them to `results/tables/`:
+
+```{r d2b}
+d2b_tab |>
+  dplyr::filter(class != "NOT REGENERATED") |>
+  dplyr::transmute(Table = stringr::str_trunc(table, 46), Class = class,
+                   `Max rel diff` = ifelse(is.na(max_rel_diff), "--", sci(max_rel_diff, 2))) |>
+  kbs(caption = "D2b: a fresh run of the ORIGINAL scripts against the committed results.")
+```
+
+Three independent lines of evidence:
+
+1. `results/tables/oxygen_results_with_R.csv` contains `fit_start_min`,
+   `N_inoc_cells_per_L` and `cell_carbon_fg`. Only the modular `05` writes
+   those. `OxygenModel.R` writes `N_inoculation_cells_per_L` instead.
+2. `results/tables/Oxygen_Data_Filtered.csv` contains `curve_code` and `O2_fit`.
+   Only the modular `02` writes those.
+3. `results/tables/data_Fig6_pooled.csv` holds $\log_{10}$ of per-cell
+   respiration and growth. Those values match the **modular**
+   `oxygen_results_with_R.csv` to $4.4\times10^{-16}$ — machine precision — and
+   differ from the original scripts' rerun by up to 0.11 in $\log_{10}R$ and
+   0.30 in $\log_{10}G$.
+
+So the Fig 6 *inputs* were computed by the modular pipeline, but the Fig 6
+*script* is absent. That is the single largest reproducibility gap in the
+repository.
+
+# Comparison D3 — the paper's headline numbers
+
+## Growth-rate agreement against $\mathrm{OD}_{600}$ and flow cytometry
+
+```{r d3-agreement}
+agr |>
+  dplyr::transmute(Tree = tree, Comparison = comparison, n = n,
+                   Intercept = sprintf("%.5f", lmer_intercept),
+                   Slope = sprintf("%.4f", lmer_slope),
+                   `R2 (mixed)` = sprintf("%.4f", R2_lmer_fitted),
+                   `R2 (OLS)` = sprintf("%.4f", R2_ols)) |>
+  kbs(caption = "D3: r_O2 regressed on the reference method, with a taxon random intercept, exactly as 06_main_figures.R does it. R2 (mixed) is the squared correlation between fitted and observed values - the number annotated on Fig 4. R2 (OLS) is the fixed-effects-only value.",
+     align = "llrrrrr")
+```
+
+The paper reports **$R^2$ > 0.9** against both methods. That holds, on the
+statistic the figure actually annotates:
+**$R^2$ = `r sprintf("%.3f", agr$R2_lmer_fitted[agr$tree=="committed" & agr$comparison=="r_O2 ~ r_OD600"])`**
+against $\mathrm{OD}_{600}$ and
+**$R^2$ = `r sprintf("%.3f", agr$R2_lmer_fitted[agr$tree=="committed" & agr$comparison=="r_O2 ~ r_FC"])`**
+against flow cytometry, with slopes
+`r sprintf("%.3f", agr$lmer_slope[agr$tree=="committed" & agr$comparison=="r_O2 ~ r_OD600"])`
+and
+`r sprintf("%.3f", agr$lmer_slope[agr$tree=="committed" & agr$comparison=="r_O2 ~ r_FC"])`
+and intercepts
+`r sprintf("%.5f", agr$lmer_intercept[agr$tree=="committed" & agr$comparison=="r_O2 ~ r_OD600"])`
+and
+`r sprintf("%.5f", agr$lmer_intercept[agr$tree=="committed" & agr$comparison=="r_O2 ~ r_FC"])`
+min$^{-1}$.
+
+**Worth stating plainly:** that $R^2$ includes the taxon random intercept. The
+fixed-effects-only (OLS) $R^2$ against $\mathrm{OD}_{600}$ is
+**`r sprintf("%.3f", agr$R2_ols[agr$tree=="committed" & agr$comparison=="r_O2 ~ r_OD600"])`**,
+not > 0.9. Against flow cytometry it is
+`r sprintf("%.3f", agr$R2_ols[agr$tree=="committed" & agr$comparison=="r_O2 ~ r_FC"])`,
+which does clear 0.9 either way. The claim reproduces as the paper computes it;
+a reader who assumed a simple regression would get a different number for $\mathrm{OD}_{600}$.
+
+The original scripts give the same picture to three decimal places
+(slope `r sprintf("%.4f", agr$lmer_slope[agr$tree=="original" & agr$comparison=="r_O2 ~ r_OD600"])`
+vs `r sprintf("%.4f", agr$lmer_slope[agr$tree=="modular" & agr$comparison=="r_O2 ~ r_OD600"])`)
+— the window difference of §3.3 does not move this conclusion.
+
+## Bland–Altman
+
+```{r d3-ba}
+ba |>
+  dplyr::transmute(Tree = tree, Comparison = comparison, n = n,
+                   Bias = sprintf("%.6f", bias),
+                   `Bias (% of mean r)` = sprintf("%.2f", 100 * bias_rel_to_mean_r),
+                   `Lower LoA` = sprintf("%.5f", loa_lower),
+                   `Upper LoA` = sprintf("%.5f", loa_upper),
+                   `% within` = sprintf("%.1f", pct_within_loa)) |>
+  kbs(caption = "D3: Bland-Altman bias per method, in units of per-minute growth rate, computed as Fig 5 computes it.",
+     align = "llrrrrrr")
+```
+
+Bias is
+**`r sprintf("%+.6f", ba$bias[ba$tree=="committed" & ba$comparison=="O2 - OD600"])` min$^{-1}$**
+against $\mathrm{OD}_{600}$
+(`r sprintf("%.1f%%", 100*ba$bias_rel_to_mean_r[ba$tree=="committed" & ba$comparison=="O2 - OD600"])`
+of the mean $\mathrm{O}_2$ growth rate) and
+**`r sprintf("%+.6f", ba$bias[ba$tree=="committed" & ba$comparison=="O2 - FC"])` min$^{-1}$**
+against flow cytometry
+(`r sprintf("%.1f%%", 100*ba$bias_rel_to_mean_r[ba$tree=="committed" & ba$comparison=="O2 - FC"])`).
+Both are positive: the $\mathrm{O}_2$ method reads slightly *faster* than either reference.
+`r sprintf("%.0f%%", ba$pct_within_loa[ba$tree=="committed" & ba$comparison=="O2 - OD600"])`
+and
+`r sprintf("%.1f%%", ba$pct_within_loa[ba$tree=="committed" & ba$comparison=="O2 - FC"])`
+of replicates fall within the limits of agreement.
+
+On **no taxon-specific bias**: per-taxon biases against flow cytometry span
+`r sprintf("%.1e", min(bat$bias[bat$tree=="committed" & bat$method=="r_FC"]))`
+to
+`r sprintf("%.1e", max(bat$bias[bat$tree=="committed" & bat$method=="r_FC"]))`
+min$^{-1}$ and change sign across taxa (`r sum(bat$bias[bat$tree=="committed" & bat$method=="r_FC"] < 0)`
+of 15 negative), consistent with the claim. Against $\mathrm{OD}_{600}$ they span
+`r sprintf("%.1e", min(bat$bias[bat$tree=="committed" & bat$method=="r_OD600"]))`
+to
+`r sprintf("%.1e", max(bat$bias[bat$tree=="committed" & bat$method=="r_OD600"]))`,
+and one taxon stands out: *Pseudomonas* at
+`r sprintf("%+.5f", bat$bias[bat$tree=="committed" & bat$method=="r_OD600" & bat$Taxon=="Pseudomonas"])`
+min$^{-1}$, about
+`r sprintf("%.0f", bat$bias[bat$tree=="committed" & bat$method=="r_OD600" & bat$Taxon=="Pseudomonas"] / mean(abs(bat$bias[bat$tree=="committed" & bat$method=="r_OD600" & bat$Taxon!="Pseudomonas"])))`×
+the mean absolute bias of the other 14. Stated as a report, not a re-analysis.
+
+```{r d3-ba-taxon}
+bat |> dplyr::filter(tree == "committed") |>
+  dplyr::select(method, Taxon, bias) |>
+  tidyr::pivot_wider(names_from = method, values_from = bias) |>
+  dplyr::transmute(Taxon,
+                   `Bias vs OD600` = sprintf("%+.5f", r_OD600),
+                   `Bias vs FC` = sprintf("%+.5f", r_FC)) |>
+  kb(caption = "D3: per-taxon Bland-Altman bias, in units of per-minute growth rate, committed tree.",
+     align = "lrr")
+```
+
+## *Pseudomonas* thermal parameters
+
+```{r d3-tpc}
+tpc |>
+  dplyr::transmute(Tree = tree, Response = response, `Best model` = best_model,
+                   `Topt (C)` = sprintf("%.2f", Topt_C),
+                   `E (eV)` = sprintf("%.3f", E_eV),
+                   `E 95% CI` = sprintf("[%.3f, %.3f]", E_lwr_eV, E_upr_eV),
+                   `Eh (eV)` = sprintf("%.3f", Eh_eV),
+                   `Eh 95% CI` = sprintf("[%.3f, %.3f]", Eh_lwr_eV, Eh_upr_eV)) |>
+  kbs(caption = "D3: SharpeSchoolfield_Temperature_Params_NEWformula.csv. All three trees agree to 0.0.",
+     align = "lllrrlrl")
+```
+
+All three trees are **identical to 0.0**. `best_model = one` is the one-sided
+Sharpe–Schoolfield form [@schoolfield1981nonlinear], selected by AIC against the
+two-sided form and a Boltzmann–Arrhenius.
+
+Two of the confidence intervals are worth flagging as reported, not as fixed:
+$E_h$ for respiration is
+`r sprintf("%.3f [%.3f, %.3f]", tpc$Eh_eV[tpc$tree=="committed" & tpc$response=="resp_C_fg_per_hr"], tpc$Eh_lwr_eV[tpc$tree=="committed" & tpc$response=="resp_C_fg_per_hr"], tpc$Eh_upr_eV[tpc$tree=="committed" & tpc$response=="resp_C_fg_per_hr"])`
+eV — the estimate sits exactly on its lower bound of 6.0 and the CI covers
+negative values — and $E$ for CUE is
+`r sprintf("%.3f [%.3f, %.3f]", tpc$E_eV[tpc$tree=="committed" & tpc$response=="carbon_use_efficiency"], tpc$E_lwr_eV[tpc$tree=="committed" & tpc$response=="carbon_use_efficiency"], tpc$E_upr_eV[tpc$tree=="committed" & tpc$response=="carbon_use_efficiency"])`
+eV, a CI spanning zero. Both are consequences of fitting six temperatures.
+
+## Where the CUE optimum falls relative to the growth optimum
+
+```{r d3-opt}
+o <- tpc |> dplyr::filter(tree == "committed") |> dplyr::select(response, Topt_C)
+gr <- o$Topt_C[o$response == "growth_r_per_hr"]
+cu <- o$Topt_C[o$response == "carbon_use_efficiency"]
+rs <- o$Topt_C[o$response == "resp_C_fg_per_hr"]
+cuet |> dplyr::filter(tree == "committed") |>
+  dplyr::transmute(`Temperature (C)` = Temperature, n = n,
+                   `Mean r (1/h)` = sprintf("%.3f", mean_r_per_hour),
+                   `Mean growth (fg C/h)` = sprintf("%.3g", mean_growth),
+                   `Mean resp (fg C/h)` = sprintf("%.3g", mean_resp),
+                   `Mean CUE` = sprintf("%.4f", mean_CUE)) |>
+  kb(caption = "D3: observed per-temperature means, Pseudomonas, four replicates each.",
+     align = "rrrrrr")
+```
+
+The paper says CUE peaks around the growth optimum, at roughly 30--35 °C. **It does.**
+Fitted optima: growth **`r sprintf("%.2f", gr)` °C**, CUE
+**`r sprintf("%.2f", cu)` °C** — CUE peaks
+**`r sprintf("%.2f", gr - cu)` °C below** the growth optimum, and both sit inside
+30–35 °C. Respiration peaks later, at **`r sprintf("%.2f", rs)` °C**, which is
+the mechanism: respiration keeps rising past the growth optimum, so CUE turns
+over slightly before growth does.
+
+Model-free, the observed means agree: mean growth rate and mean CUE both peak in
+the **32 °C** bin (`r sprintf("%.3f", max(cuet$mean_r_per_hour[cuet$tree=="committed"]))` h$^{-1}$
+and `r sprintf("%.4f", max(cuet$mean_CUE[cuet$tree=="committed"]))`), while mean
+respiration keeps rising to 36 °C.
+
+# Data integrity and the QC gate
+
+## The audit
+
+```{r e1}
+e1 |>
+  dplyr::transmute(File = file, Rows = n_rows, Cols = n_cols,
+                   Taxa = ifelse(is.na(n_taxa), "--", as.character(n_taxa)),
+                   Series = ifelse(is.na(n_series), "--", as.character(n_series)),
+                   Missing = n_missing_cells,
+                   `Consumed by` = stringr::str_trunc(
+                     stringr::str_remove(consumed_by, " \\(config.*$| via config.*$| only \\(.*$"), 26)) |>
+  kbs(caption = "PART E: every file in data/. 'Consumed by' is abbreviated; the full text is in E1_data_audit.csv.",
+      align = "lrrrrrl")
+```
+
+**No missing values anywhere in `data/`** — 0 NA cells across all six files.
+Units are consistent but entirely implicit: nothing in `data/` declares that
+`Time` is minutes, `Oxygen` is mg $\mathrm{O}_2$ L$^{-1}$ or `Temperature` is °C.
+
+**One file is unused.** `data/Cell_Counts.csv` is read by no automated stage.
+Only the `04_experiment_inputs.R` Shiny app touches it, and only as a fallback
+list of taxon names when `Oxygen_All_Long.csv` is absent. Its
+`OD_Initial`/`OD_Final`/`FC_Initial`/`FC_Final` columns are duplicated — not
+identically — in `data/OD_r_FC_r.csv`, which *is* used, by `06`.
+
+## `FC_Initial` versus `N_inoculation_cells_per_L`
+
+These are the same quantity from two sources: the flow-cytometry count at
+inoculation, and the inoculation density that anchors $N_0$ and therefore all
+absolute respiration. Taking the `04` app's own stated convention — counts are
+cells µL$^{-1}$, multiplied by $10^6$ to give cells L$^{-1}$ — they do not agree.
+
+```{r e2}
+e2t |>
+  dplyr::transmute(Taxon, n,
+                   `FC sources disagree` = n_FC_sources_disagree,
+                   `Median ratio` = sprintf("%.3f", median_ratio_vs_CellCounts),
+                   `Min` = sprintf("%.3f", min_ratio_vs_CellCounts),
+                   `Max` = sprintf("%.3f", max_ratio_vs_CellCounts)) |>
+  kb(caption = "PART E: ratio of N_inoculation_cells_per_L (data/Ninoc.csv) to FC_Initial x 1e6 (data/Cell_Counts.csv), per taxon. 'FC sources disagree' counts replicates where FC_Initial differs between Cell_Counts.csv and OD_r_FC_r.csv.",
+     align = "lrrrrr")
+```
+
+Across all 75 replicates the ratio has median
+**`r sprintf("%.3f", median(e2r$ratio_Ninoc_over_FC_CellCounts))`** and spans
+**`r sprintf("%.3f", min(e2r$ratio_Ninoc_over_FC_CellCounts))` to
+`r sprintf("%.3f", max(e2r$ratio_Ninoc_over_FC_CellCounts))`** — a
+`r sprintf("%.0f", max(e2r$ratio_Ninoc_over_FC_CellCounts)/min(e2r$ratio_Ninoc_over_FC_CellCounts))`-fold
+spread. That is not a constant unit offset; it is a per-replicate disagreement.
+The per-replicate ratios are in `E2_FC_vs_Ninoc_per_replicate.csv`.
+
+Separately, `FC_Initial` itself differs between `data/Cell_Counts.csv` and
+`data/OD_r_FC_r.csv` in
+**`r sum(e2r$FC_sources_agree == FALSE, na.rm = TRUE)` of 75 replicates**
+(for example *Acinetobacter* R1: 94 vs 83). There are effectively three
+inoculum numbers in the repository for each series.
+
+**Reported only. D1 changes nothing here.** But note the consequence: $N_0$
+scales per-cell respiration $R$ linearly, so a systematically low $N_0$ inflates
+$R$ by the same factor.
+
+## The QC gate
+
+```{r e3}
+e3c |>
+  dplyr::transmute(Criterion = stringr::str_remove(criterion, "^pass_"),
+                   Threshold = threshold, `Series` = n_series,
+                   `Failures` = n_fail) |>
+  kb(caption = "PART E: the automatic QC gate, all 75 series.", align = "llrr")
+```
+
+**All 75 of 75 series pass all eight criteria.** Not narrowly, either: the
+tightest series still clears its binding threshold by 92% of the available
+margin. Typical values are pseudo-$R^2$ > 0.9998 against a 0.90 threshold, MAPE
+about 0.001 against 0.15, and AIC gains of 650–870 against a required 10.
+
+```{r e3g}
+tibble::tibble(Metric = names(e3g), Value = as.integer(e3g)) |>
+  kb(caption = "PART E: automatic gate versus manual curation.", align = "lr")
+```
+
+**Is the automatic gate doing the work, or the manual curation?** Neither is
+doing any *filtering*: `r as.integer(e3g[["series failing fit_ok (automatic gate)"]])`
+series fail the gate and
+`r as.integer(e3g[["series removed by plot_exclude_points.csv (manual)"]])`
+are manually excluded (`plot_exclude_points.csv` is empty), so the overlap
+question is vacuous — there is nothing to overlap.
+
+But that is not the same as saying manual curation is idle. The curation that
+*is* load-bearing is `manual_fit_windows.csv`, which sets an explicit window on
+**all `r as.integer(e3g[["curves with a manual fit window in manual_fit_windows.csv"]])`
+curves, both sides on every one**. Those windows, not the automatic trimmer,
+determine every fitted number, and they are why the modular pipeline and the
+original scripts disagree (§3.3). The QC gate is a formality on this dataset;
+the hand-set windows are the analysis decision.
+
+## `N0_BACKPROJECT` and the amplification factor
+
+`config.R` sets `N0_BACKPROJECT <- TRUE`, so
+$N_0 = N_{\text{inoc}} \cdot e^{r\delta}$, with $\delta$ the inoculation → $\mathrm{O}_2$-start
+delay.
+
+```{r e4}
+tibble::tibble(Statistic = names(e4o), Value = as.numeric(e4o)) |>
+  dplyr::mutate(Value = ifelse(abs(Value) >= 1000 | (abs(Value) < 0.01 & Value != 0),
+                               sci(Value, 3), sprintf("%.4f", Value))) |>
+  kb(caption = "PART E: the N0 back-projection, all 75 series.", align = "lr")
+```
+
+$\delta$ spans **`r sprintf("%.2f", as.numeric(e4o[["delta min (min)"]]))` to
+`r sprintf("%.2f", as.numeric(e4o[["delta max (min)"]]))` minutes** and the
+amplification $e^{r\delta}$ has median
+**`r sprintf("%.2f", as.numeric(e4o[["exp(r*delta) median"]]))`**, reaching
+**`r sprintf("%.2f", as.numeric(e4o[["exp(r*delta) max"]]))`**.
+`r sprintf("%.0f%%", 100*as.numeric(e4o[["fraction of series with exp(r*delta) > 2"]]))`
+of series are amplified more than twofold and
+`r sprintf("%.0f%%", 100*as.numeric(e4o[["fraction with exp(r*delta) > 5"]]))`
+more than fivefold. The amplification is exponential in the *fitted* $r$, so fit
+noise in $r$ propagates into $N_0$ — and hence into $R$ — with a lever arm of
+$\delta$, up to 81 minutes.
+
+```{r e4t}
+e4t |>
+  dplyr::transmute(Taxon, n,
+                   `delta median` = sprintf("%.2f", delta_med),
+                   `exp(r d) min` = sprintf("%.2f", amp_min),
+                   `exp(r d) median` = sprintf("%.2f", amp_med),
+                   `exp(r d) max` = sprintf("%.2f", amp_max)) |>
+  kb(caption = "PART E: back-projection amplification by taxon, ordered by median.",
+     align = "lrrrrr")
+```
+
+**Reported only. D2 investigates.**
+
+# Blockers
+
+## What had to change to make the pipeline run
+
+Three things, all of them execution blockers, none of them analysis decisions.
+
+1. **`04_experiment_inputs.R` launched a browser in the non-interactive
+   branch.** It read
+   `if (interactive()) shinyApp(...) else runApp(..., launch.browser = TRUE)`,
+   so any headless `source()` blocked forever waiting on a Shiny server.
+   `03_trim_selector.R` ended in a bare top-level `shinyApp(ui, server)`. Both
+   are now guarded behind `interactive() || OXYMODEL_LAUNCH_APPS=1`.
+2. **`10_temperature_cue.R` was outside `run_all.R`'s loop.** The published
+   *Pseudomonas* CUE result — Figure 7 and
+   `SharpeSchoolfield_Temperature_Params_NEWformula.csv` — was regenerated by no
+   automated path at all. It is now stage 10 of the run.
+3. **`lmerTest` and `multcomp` were not installed on the machine.**
+   `06_main_figures.R` loads both, so Figures 3/4/5 could not have been
+   produced. They are now pinned in `renv.lock`.
+
+Two documentation defects were corrected rather than left to mislead:
+
+4. **`run_all.R` and `config.R` both claimed the OD600 / flow-cytometry
+   comparison was "intentionally not included".** It is included:
+   `06_main_figures.R` emits `Fig_3_growth_rate_comparison.tiff`,
+   `Fig_4_growth_rate_regression_normalized_combined.tiff`,
+   `Fig_5_BlandAltman_AllReplicates_LME.tiff` and `method_effects_CI.tiff` from
+   `data/OD_r_FC_r.csv`. The committed Figs 3–5 are regenerated by the modular
+   pipeline and match it. What is genuinely absent is Fig 6.
+5. **`scripts/README.md` claims `06_main_figures.R` produces Fig 6.** It does
+   not, and never did in this commit.
+
+One switch was added, `OXYMODEL_RESULTS`, defaulting to `results/` so default
+behaviour is unchanged. It redirects only outputs; the two app-written curation
+tables are read from the committed `results/tables/` regardless, because they
+are inputs.
+
+## What still cannot be run
+
+1. **Figure 6 cannot be regenerated by anything in this repository.** Six
+   tables, three text files and five TIFFs have no producer. `OxygenModel.R`
+   writes three differently-named Fig 6 tables whose numbers do not match the
+   committed ones, and the committed `data_Fig6_pooled.csv` matches the *modular*
+   fit results to machine precision — so the missing script consumed modular
+   output. Recovering Figure 6 needs that script, or a re-derivation.
+2. **`OxygenModel.R` cannot find its inoculum table as deposited.** It
+   hard-codes `data/Ninoc_and_deltaTime_to_N0.csv`; the deposited file is
+   `data/Ninoc.csv`. The scratch tree supplies both names. The minimal fix would
+   be to accept either, as `config.R` already does.
+3. **The committed synthetic-recovery tables cannot be reproduced exactly.**
+   Both current implementations agree with each other to 0.0 and differ from the
+   committed files by roughly $10^{-5}$ — an artefact of the R / `minpack.lm` version they
+   were made with, now unrecoverable. Nothing the paper claims depends on the
+   fifth decimal place of a bias estimate.
+4. **`data/Cell_Counts.csv` cannot be reconciled with `data/Ninoc.csv`** from
+   inside the repository (§5.2). It needs the experimentalists.
+
+## Correction to an earlier commit message
+
+The commit `D1: regenerate into runs/D1_baseline; three-way comparison` states
+"21 of 22 regenerable tables IDENTICAL". The correct counts, from
+`D1_modular_vs_committed_tables.csv`, are **`r n_ident` IDENTICAL,
+`r n_div` DIVERGENT, `r n_nr` NOT REGENERATED**. The tables in §2 are
+authoritative.
+
+# Provenance {.unnumbered}
+
+```{r provenance}
+tibble::tibble(
+  Field = c("Report", "Git commit", "Branch", "Environment recorded (UTC)",
+            "Pipeline run id", "R", "Platform", "OS",
+            "renv lockfile", "Quarto", "PDF engine",
+            "Output tree", "Originals scratch tree"),
+  Value = c("D1 — baseline reproduction",
+            VERS$git$commit, VERS$git$branch, VERS$recorded_utc,
+            MAN[["run_id"]],
+            VERS$R$version, VERS$R$platform, VERS$R$os,
+            paste0("renv.lock — ", VERS$renv$n_packages, " packages, R ",
+                   VERS$renv$lockfile_R),
+            VERS$quarto$version,
+            paste0(VERS$pdf_engine$name, " — ",
+                   stringr::str_trunc(VERS$pdf_engine$version, 46)),
+            MAN[["output_root"]], MAN[["originals_scratch"]])
+) |> kb(caption = "Provenance. Environment fields come from env/versions.json, written by scripts/00_install.R.")
+```
+
+## Where every number in this report came from {.unnumbered}
+
+Every table above is rendered directly from the file named here; no number was
+typed in by hand. All paths are relative to the project root.
+
+```{r sources}
+tibble::tribble(
+  ~Section, ~Source,
+  "§1.1 wall time",                  "runs/D1_baseline/comparisons/D0_stage_timings.csv (from logs/<run-id>/stage_timings.csv)",
+  "§1.1 originals wall time",        "runs/D1_baseline/comparisons/D0_original_timings.csv",
+  "§1 byte-identical claim",       "env/pre_run_checksums.txt, verified with shasum -a 256 -c",
+  "§2 table classification",       "runs/D1_baseline/comparisons/D1_modular_vs_committed_tables.csv",
+  "§2 per-column detail",          "runs/D1_baseline/comparisons/D1_modular_vs_committed_columns.csv",
+  "§2 text summaries",             "runs/D1_baseline/comparisons/D1_modular_vs_committed_textfiles.csv",
+  "§2.2 figures",                    "runs/D1_baseline/comparisons/D1_figure_inventory.csv",
+  "§3.2 per quantity",               "runs/D1_baseline/comparisons/D2_per_quantity.csv",
+  "§3 per table",                  "runs/D1_baseline/comparisons/D2_modular_vs_original_tables.csv",
+  "§3.3 window shifts",            "runs/D1_baseline/comparisons/E3_manual_vs_auto_windows.csv",
+  "§3.4 original vs committed",    "runs/D1_baseline/comparisons/D2b_original_vs_committed_tables.csv",
+  "§4.1 R2 / slope / intercept",   "runs/D1_baseline/comparisons/D3_growth_rate_agreement.csv",
+  "§4.2 Bland-Altman",             "runs/D1_baseline/comparisons/D3_bland_altman.csv",
+  "§4.2 per-taxon bias",           "runs/D1_baseline/comparisons/D3_bland_altman_by_taxon.csv",
+  "§4.3 thermal parameters",       "runs/D1_baseline/comparisons/D3_thermal_parameters.csv",
+  "§4.4 CUE vs growth optimum",    "runs/D1_baseline/comparisons/D3_optima.csv, D3_cue_by_temperature.csv",
+  "§5.1 data audit",               "runs/D1_baseline/comparisons/E1_data_audit.csv",
+  "§5.2 FC vs Ninoc",              "runs/D1_baseline/comparisons/E2_FC_vs_Ninoc_by_taxon.csv, E2_FC_vs_Ninoc_per_replicate.csv",
+  "§5.3 QC gate",                  "runs/D1_baseline/comparisons/E3_qc_gate_by_criterion.csv, E3_qc_gate_per_series.csv",
+  "§5.3 gate vs curation",         "runs/D1_baseline/comparisons/E3_gate_vs_manual_curation.csv",
+  "§5.4 back-projection",          "runs/D1_baseline/comparisons/E4_backprojection_overall.csv, E4_backprojection_by_taxon.csv",
+  "Provenance",                    "env/versions.json, runs/D1_baseline/comparisons/D0_run_manifest.csv"
+) |> kb(caption = "Number-to-source map.")
+```
+
+The artefacts themselves are produced by
+`reports/D1_baseline/scripts/d1_compare.R` and
+`reports/D1_baseline/scripts/d1_audit.R`, from the trees built by
+`scripts/run_all.sh` and `reports/D1_baseline/scripts/run_originals.sh`. To
+regenerate everything in this report from a clean checkout, see
+`reports/RUNBOOK.md`.
+
+# References {.unnumbered}
+
+::: {#refs}
+:::

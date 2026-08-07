@@ -7,3 +7,14 @@ _wip_backup/
 
 # R session temp
 scripts/.RDataTmp
+
+# ---- LaTeX build artefacts from `quarto render` -----------------------------
+# Scoped to reports/ ON PURPOSE. A bare `*.log` would also swallow the pipeline
+# logs, which are real output worth being able to commit.
+reports/**/*.aux
+reports/**/*.log
+reports/**/*.toc
+reports/**/*.out
+reports/**/*.tex
+# ...but the shared LaTeX preamble is a source file, not a build artefact.
+!reports/_shared/header.tex

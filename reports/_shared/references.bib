@@ -1,0 +1,62 @@
+% =============================================================================
+% reports/_shared/references.bib - shared bibliography for the D-series
+% =============================================================================
+% Add entries here rather than per-report, so every report cites the same keys.
+% =============================================================================
+
+@article{cakin2026oxygen,
+  author  = {Cakin, I. and others},
+  title   = {Oxygen dynamics as a method for simultaneous estimation of
+             microbial growth and respiration},
+  journal = {ISME Communications},
+  volume  = {6},
+  pages   = {ycag024},
+  year    = {2026}
+}
+
+@misc{oxygenmodel_repo,
+  author       = {Cakin, I.},
+  title        = {{icakin/OxygenModel}: reference implementation of the
+                  oxygen-dynamics method},
+  howpublished = {Git repository},
+  year         = {2026},
+  note         = {Restructured into a modular pipeline at commit \texttt{ed5e1a6}}
+}
+
+@article{schoolfield1981nonlinear,
+  author  = {Schoolfield, R. M. and Sharpe, P. J. H. and Magnuson, C. E.},
+  title   = {Non-linear regression of biological temperature-dependent rate
+             models based on absolute reaction-rate theory},
+  journal = {Journal of Theoretical Biology},
+  volume  = {88},
+  number  = {4},
+  pages   = {719--731},
+  year    = {1981}
+}
+
+@article{bland1986statistical,
+  author  = {Bland, J. M. and Altman, D. G.},
+  title   = {Statistical methods for assessing agreement between two methods of
+             clinical measurement},
+  journal = {The Lancet},
+  volume  = {327},
+  number  = {8476},
+  pages   = {307--310},
+  year    = {1986}
+}
+
+@Manual{renv,
+  title  = {renv: Project Environments},
+  author = {Kevin Ushey and Hadley Wickham},
+  year   = {2025},
+  note   = {R package; the lockfile is the environment pin for this repository}
+}
+
+@Manual{minpacklm,
+  title  = {minpack.lm: R Interface to the Levenberg-Marquardt Nonlinear
+            Least-Squares Algorithm},
+  author = {Timur V. Elzhov and Katharine M. Mullen and Andrej-Nikolai Spiess
+            and Ben Bolker},
+  year   = {2023},
+  note   = {R package; provides nlsLM(), used for every fit in this pipeline}
+}
