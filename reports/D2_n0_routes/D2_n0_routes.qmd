@@ -84,6 +84,37 @@ g <- function(v) as.numeric(if (v %in% names(b2s)) b2s[[v]] else b1s[[v]])
 rat <- function(k) a2s$median[a2s$ratio == k]
 ```
 
+# Subsequent developments {.unnumbered}
+
+::: {.callout-important title="Added 2026-08-07 — read before quoting any absolute number below"}
+This report was written against commit `ed5e1a6`. It is the record of what was
+found **at that time**; it has not been re-run. Three things changed on `main`
+afterwards, and this preamble was added without re-rendering the analysis.
+
+1. **The backward route is now the default.** `dc0951c` (2026-08-06) introduced
+   depletion-anchored $N_0$ and `config.R` ships `N0_METHOD <- "depletion"` —
+   the route this report argues for. Its recommendation is implemented, not
+   pending. The forward route survives as the `"initial"` fallback.
+
+2. **`FC_TO_CELLS_PER_L` was re-derived.** `1cb16fb` (2026-08-07) replaced
+   `909916` — a placeholder tuned to a target median $R$, implying an impossible
+   sub-1× dilution — with `10255100`, derived from the stated dilution chain.
+   This sets the **absolute** respiration and CUE scale only. **The absolute
+   per-cell respiration figures in this report predate that change and should
+   not be quoted as current.** Relative results and every conclusion about
+   *ordering* or *optima* are unaffected.
+
+3. **`data/Ninoc.csv` was rewritten, but its values did not move.** `5ed17b0`
+   (2026-08-03) rewrites all 75 rows; the median `N_inoculation_cells_per_L`
+   shifts only from 24,605,191 to 24,788,014 cells/L (median row-wise ratio
+   1.000×). **The central finding below — that the two independent density
+   measurements agree with each other and both sit ~49–66× above `N_inoc` —
+   is therefore not resolved by that rewrite and stands as current.**
+
+Recomputing under the new constant and default route is out of scope for the
+documentation change that added this note, and has not been done.
+:::
+
 # Verdict {.unnumbered}
 
 ```{=latex}
