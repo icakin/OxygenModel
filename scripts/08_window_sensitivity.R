@@ -33,7 +33,7 @@ suppressPackageStartupMessages({ library(dplyr); library(minpack.lm); library(gg
 ox  <- readr::read_csv(FILTERED_CSV, show_col_types = FALSE) |>
          mutate(Taxon = as.character(Taxon), Replicate = as.character(Replicate))
 win <- readr::read_csv(file.path(tables_dir, "manual_fit_windows.csv"), show_col_types = FALSE)
-nin <- readr::read_csv(NINOC_CSV, show_col_types = FALSE)
+dep <- load_depletion_table(); fcf <- load_fc_final()   # depletion-anchored N0 inputs
 
 # fit one curve over [start,end]; return r, K, C_tot, T_end, O0, QC flag
 fit_one <- function(df0, start, end) {
@@ -58,8 +58,8 @@ fit_one <- function(df0, start, end) {
             is.finite(K_est), K_est>0, K_est<0.5, is.finite(r_est), r_est>=1e-4, r_est<=0.1)
   list(r=r_est, K=K_est, C_tot=(K_est/r_est)*(exp(r_est*T_end)-1)*O0, T_end=T_end, O0=O0, ok=ok)
 }
-percell_R <- function(f, N_inoc, delta) {           # fg C / cell / h
-  N0 <- N_inoc * exp(f$r * delta)
+percell_R <- function(f, FC_Final, t_dep, start) {  # fg C / cell / h (depletion-anchored N0)
+  N0 <- FC_Final * FC_TO_CELLS_PER_L * exp(-f$r * (t_dep - start))
   (f$C_tot / (N0 * (exp(f$r * f$T_end) - 1) / f$r)) * O2_to_C_mass * MG_TO_FG * MIN_TO_H
 }
 
@@ -68,17 +68,19 @@ rows <- list()
 for (i in seq_len(nrow(win))) {
   Tax <- win$Taxon[i]; Rep <- win$Replicate[i]
   df0 <- ox  |> filter(Taxon==Tax, Replicate==Rep)
-  nr  <- nin |> filter(Taxon==Tax, Replicate==Rep)
-  if (nrow(df0) < 5 || nrow(nr) == 0) next
-  N_inoc <- nr$N_inoculation_cells_per_L[1]; delta <- nr$delta_Ninoc_to_N0_min[1]
+  dr  <- dep |> filter(Taxon==Tax, Replicate==Rep)
+  fr  <- fcf |> filter(Taxon==Tax, Replicate==Rep)
+  if (nrow(df0) < 5 || nrow(dr) == 0 || nrow(fr) == 0) next
+  t_dep <- dr$t_depletion_min[1]; FC_Final <- fr$FC_Final[1]
   base <- fit_one(df0, win$fit_start[i], win$fit_end[i]); if (is.null(base)) next
-  baseR <- percell_R(base, N_inoc, delta)
+  baseR <- percell_R(base, FC_Final, t_dep, win$fit_start[i])
   for (ds in OFF) for (de in OFF) {
     f <- fit_one(df0, win$fit_start[i]+ds, win$fit_end[i]+de); if (is.null(f)) next
+    st <- win$fit_start[i]+ds
     rows[[length(rows)+1]] <- tibble::tibble(
       Taxon=Tax, Replicate=Rep, ds=ds, de=de, is_base=(ds==0 & de==0),
-      r=f$r, K=f$K, Rpc=percell_R(f,N_inoc,delta), ok=f$ok,
-      dK_pct=100*(f$K-base$K)/base$K, dR_pct=100*(percell_R(f,N_inoc,delta)-baseR)/baseR,
+      r=f$r, K=f$K, Rpc=percell_R(f,FC_Final,t_dep,st), ok=f$ok,
+      dK_pct=100*(f$K-base$K)/base$K, dR_pct=100*(percell_R(f,FC_Final,t_dep,st)-baseR)/baseR,
       dr_pct=100*(f$r-base$r)/base$r)
   }
 }

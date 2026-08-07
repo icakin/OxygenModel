@@ -8,7 +8,7 @@ Formula: log_G ~ log_Rc + (1 + log_Rc | Taxon)
 
 Scaled residuals: 
      Min       1Q   Median       3Q      Max 
--2.70327 -0.37194  0.03834  0.44078  2.49379 
+-2.70326 -0.37194  0.03834  0.44078  2.49379 
 
 Random effects:
  Groups   Name        Variance Std.Dev. Corr 
@@ -19,8 +19,8 @@ Number of obs: 75, groups:  Taxon, 15
 
 Fixed effects:
             Estimate Std. Error      df t value Pr(>|t|)    
-(Intercept)  1.93633    0.05114 8.70865  37.863 5.73e-11 ***
-log_Rc       0.28337    0.05378 9.97401   5.269 0.000366 ***
+(Intercept)  1.93633    0.05114 8.70868  37.863 5.73e-11 ***
+log_Rc       0.28337    0.05378 9.97444   5.269 0.000366 ***
 ---
 Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
 

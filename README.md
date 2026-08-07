@@ -22,21 +22,27 @@ Each Taxon × Replicate O₂ trace is fit with the normalised model (N₀ fixed 
 - `O2_0`   fitted normalised intercept
 - `O2_ref` initial O₂ used for normalisation
 
-## Per-cell respiration and N0
+## Per-cell respiration and the N0 back-calculation
 
 Per-cell respiration is `R = C_tot / (biomass integral)`, where the biomass
 integral is `N0 * (exp(r*T_end) - 1) / r` over the fit window.
 
-N0 (cell density at the fit start) is reconstructed from the per-replicate
-inoculation densities in `data/Ninoc.csv`:
+N0 (cell density at the fit start) is reconstructed by the **depletion-anchored**
+method (default, `N0_METHOD = "depletion"` in `config.R`). Cells grow until O₂ is
+exhausted and then stop, so the final flow-cytometry count `FC_Final` reflects the
+biomass at O₂ depletion. N0 is that count projected back to the fit start over the
+interval during which growth actually occurred:
 
-    N0 = N_inoculation_cells_per_L * exp(r * delta_Ninoc_to_N0_min)
+    N0 = FC_Final * FC_TO_CELLS_PER_L * exp(-r * (t_depletion - fit_start))
 
-where `delta_Ninoc_to_N0_min` is the inoculation-to-onset delay for that curve.
-`r` and the fit windows are independent of N0, so the growth-rate results and the
-OD600 / flow-cytometry validation do not depend on it; only per-cell respiration
-and CUE do. The absolute respiration/CUE scale rides on the inoculation densities
-and the carbon assumptions, not on the slope of the respiration-growth relationship.
+`t_depletion` is the time each vial reaches `DEPLETION_FRAC` (default 10%) of its
+starting O₂. This uses the true growth interval and avoids the `-r*delta` coupling
+of an initial-count back-projection. `r` and the fit windows are unaffected, so the
+growth-rate results and the OD/FC validation do not change; only R (and CUE) do.
+Setting `N0_METHOD <- "initial"` restores the older `N0 = N_inoc * exp(r*delta)` route.
+
+`FC_TO_CELLS_PER_L` sets the absolute respiration/CUE scale only (not the slope or
+relative pattern); it encodes the flow-cytometry dilution and sample volume.
 
 ## Running the pipeline
 
@@ -54,7 +60,7 @@ The temperature analysis (11) and the joint estimator (12) are run separately.
 - `02_trimming.R`          onset/end trimming, per-curve metadata, diagnostics PDF
 - `03_trim_selector.R`     (Shiny app, optional) review/override each curve's fit window + exclusions
 - `04_experiment_inputs.R` (Shiny app, optional) per-taxon inputs
-- `05_oxygen_fits.R`       nlsLM fits (honours 03 windows) + N0 from Ninoc.csv and per-cell R
+- `05_oxygen_fits.R`       nlsLM fits (honours 03 windows) + depletion-anchored N0 and per-cell R
 - `06_main_figures.R`      Fig 2 (O₂ dynamics), 3/4/5 (cross-method growth), 6 (growth vs respiration, RIS mixed model), Supp Fig 3, Supp Fig S1
 - `07_cutoff_sensitivity.R` re-fit using only O₂_norm ≥ 0.5 (reviewer sensitivity)
 - `08_window_sensitivity.R` fit-window robustness of K, R, r
@@ -66,10 +72,10 @@ The temperature analysis (11) and the joint estimator (12) are run separately.
 ## Key data inputs (`data/`)
 
 - `Oxygen_Data_Long.csv`         raw O₂ series (`Taxon, Replicate, Time, Oxygen`)
-- `Ninoc.csv`                    per-replicate inoculation densities and delays (`N_inoculation_cells_per_L`, `delta_Ninoc_to_N0_min`); anchors N0
-- `OD_r_FC_r.csv`                per-replicate OD and flow-cytometry counts (`FC_Initial`, `FC_Final`); used for the OD600/FC growth validation (Figs 3–5)
+- `OD_r_FC_r.csv`                per-replicate OD and flow-cytometry counts (`FC_Initial`, `FC_Final`); drives the depletion-anchored N0 and the growth validation
 - `taxon_cell_sizes.csv`         per-taxon cell volume → carbon (100 fg C µm⁻³)
 - `Cell_Counts.csv`              per-taxon mean of the at-inoculation counts
+- `Ninoc.csv`                    per-replicate inoculation densities (used only by the `initial` N0 fallback)
 - `Oxygen_Data_Filtered_CUE.csv` temperature-gradient O₂ series (Pseudomonas)
 
 ## Main outputs

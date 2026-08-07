@@ -4,13 +4,14 @@
 # Per (Taxon, Replicate) series: apply any manual fit window / exclusion set in
 # the 03 trim-selector app (loaded by config), normalise O2, fit
 #   O2_norm(t) = O2_0 + (K / r) * (1 - exp(r * t))   via minpack.lm::nlsLM,
-# run the QC gate, export fitted curves, then reconstruct N0 from the config
-# inoculation density and the per-curve delay recorded by 02, and per-cell
+# run the QC gate, export fitted curves, then reconstruct N0 by the
+# depletion-anchored method (FC_Final projected back to the fit start over the
+# fit-start -> 90% O2 depletion interval; config N0_METHOD), and per-cell
 # respiration R plus carbon fluxes (using per-taxon cell carbon).
 #
 #   Input : results/tables/Oxygen_Data_Filtered.csv            (from 02)
-#           results/tables/Oxygen_Trimmed_Series_Metadata.csv  (delta -> N0)
-#           config: N_inoculation_cells_per_L, N0_BACKPROJECT, cell carbon,
+#           results/tables/Oxygen_All_Long.csv                 (full trace -> depletion time)
+#           data/OD_r_FC_r.csv (FC_Final); config: N0_METHOD, cell carbon,
 #                   MANUAL_FIT_WINDOWS, PLOT_EXCLUDE_POINTS
 #   Output: results/tables/oxygen_fit_results.csv
 #           results/tables/oxygen_fit_curves.csv
@@ -199,27 +200,46 @@ fit_curves <- dplyr::bind_rows(fit_curves_lst)
 readr::write_csv(fit_curves, FITCURVES_CSV)
 
 # =============================================================================
-# Reconstruct N0 (config N_inoc + per-curve delay) -> per-cell respiration R
+# Reconstruct N0 (depletion-anchored FC_Final; config N0_METHOD) -> per-cell R
 # =============================================================================
-# Per-curve inoculation density + delay: CSV (if present) overrides the scalar
-# and, if it carries delta_Ninoc_to_N0_min, the trimming-derived delay too.
-.taxa  <- results_fit$Taxon; .reps <- results_fit$Replicate
-.nin   <- if (length(.taxa)) t(vapply(seq_along(.taxa),
-             function(i) ninoc_of(.taxa[i], .reps[i]), numeric(2))) else matrix(numeric(0), 0, 2)
-# delta = (first point in the model time frame) - t0 = the fit-start time captured above.
-.dtrim <- results_fit$fit_start_min
+# DEFAULT (N0_METHOD = "depletion"): anchor N0 to the FINAL flow-cytometry count
+# (FC_Final), projected back to the fit start over the interval during which growth
+# actually happened (fit start -> 90% O2 depletion). FALLBACK ("initial"): the old
+# N0 = N_inoc * exp(r * delta) route. r and the fit windows are untouched either way.
+.dep <- load_depletion_table(); .fcf <- load_fc_final()
+if (identical(N0_METHOD, "depletion") && !is.null(.dep) && !is.null(.fcf)) {
+  resp <- results_fit %>%
+    dplyr::left_join(.dep, by = c("Taxon", "Replicate")) %>%
+    dplyr::left_join(.fcf, by = c("Taxon", "Replicate")) %>%
+    dplyr::mutate(
+      cell_carbon_fg = cell_carbon_of(Taxon),
+      t_growth_min   = t_depletion_min - fit_start_min,   # fit start -> O2 depletion
+      N0_cells_per_L = dplyr::if_else(
+        is.finite(FC_Final) & FC_Final > 0 & is.finite(r_per_minute) & r_per_minute > 0 &
+          is.finite(t_growth_min) & t_growth_min > 0,
+        n0_depletion(FC_Final, r_per_minute, t_depletion_min, fit_start_min), NA_real_))
+  .nmiss <- sum(!resp$depleted, na.rm = TRUE)
+  if (.nmiss > 0) message("05_oxygen_fits: ", .nmiss, " curve(s) did not reach ",
+    round(100 * (1 - DEPLETION_FRAC)), "% depletion; used recording end as growth-stop.")
+} else {
+  .taxa  <- results_fit$Taxon; .reps <- results_fit$Replicate
+  .nin   <- if (length(.taxa)) t(vapply(seq_along(.taxa),
+               function(i) ninoc_of(.taxa[i], .reps[i]), numeric(2))) else matrix(numeric(0), 0, 2)
+  .dtrim <- results_fit$fit_start_min
+  resp <- results_fit %>%
+    dplyr::mutate(
+      N_inoc_cells_per_L    = .nin[, 1],
+      delta_Ninoc_to_N0_min = dplyr::if_else(is.finite(.nin[, 2]), .nin[, 2], .dtrim + INOC_DELAY_MIN),
+      cell_carbon_fg        = cell_carbon_of(Taxon),
+      N0_cells_per_L = dplyr::case_when(
+        !isTRUE(N0_BACKPROJECT) ~ N_inoc_cells_per_L,
+        is.finite(delta_Ninoc_to_N0_min) & is.finite(r_per_minute) & r_per_minute > 0 ~
+          N_inoc_cells_per_L * exp(r_per_minute * delta_Ninoc_to_N0_min),
+        TRUE ~ N_inoc_cells_per_L))
+}
 
-resp <- results_fit %>%
+resp <- resp %>%
   dplyr::mutate(
-    N_inoc_cells_per_L    = .nin[, 1],
-    delta_Ninoc_to_N0_min = dplyr::if_else(is.finite(.nin[, 2]), .nin[, 2], .dtrim + INOC_DELAY_MIN),
-    cell_carbon_fg        = cell_carbon_of(Taxon),
-    N0_cells_per_L = dplyr::case_when(
-      !isTRUE(N0_BACKPROJECT) ~ N_inoc_cells_per_L,
-      is.finite(delta_Ninoc_to_N0_min) & is.finite(r_per_minute) & r_per_minute > 0 ~
-        N_inoc_cells_per_L * exp(r_per_minute * delta_Ninoc_to_N0_min),
-      TRUE ~ N_inoc_cells_per_L
-    ),
     biomass_integral_cells_min_per_L = dplyr::if_else(
       is.finite(N0_cells_per_L) & N0_cells_per_L > 0 & is.finite(r_per_minute) &
         r_per_minute > 0 & is.finite(T_end_min) & T_end_min > 0,
@@ -235,4 +255,4 @@ resp <- results_fit %>%
 
 readr::write_csv(resp, RESULTS_FINAL_CSV)
 message("05_oxygen_fits: ", sum(results_fit$fit_ok), "/", nrow(results_fit),
-        " good fits. N0 backproject = ", N0_BACKPROJECT, ". Curves -> ", FITS_PDF)
+        " good fits. N0 method = ", N0_METHOD, ". Curves -> ", FITS_PDF)

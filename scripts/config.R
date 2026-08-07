@@ -87,7 +87,7 @@ TAXON_CELL_SIZES_CSV   <- file.path(data_dir, "taxon_cell_sizes.csv")
 
 # ===== The normalised O2 respiration model ===================================
 #   O2_norm(t) = O2_0 + (K / r) * (1 - exp(r * t))    (N0 fixed to 1 in the fit)
-# Per-cell respiration is reconstructed afterwards as  R = K * O2_ref / N0.
+# Per-cell respiration R is reconstructed afterwards from N0 (see N0_METHOD below).
 resp_model <- function(r, K, t, O2_0) {
   O2_0 + (K / r) * (1 - exp(r * t))
 }
@@ -113,13 +113,12 @@ MAPE_MAX         <- 0.15
 USE_DRAWDOWN_WINDOW <- FALSE
 FIT_DRAWDOWN_FRAC   <- 0.45
 
-# ===== USER INPUT: inoculation density (Ninoc) ===============================
-# Inoculation density (cells / L). This anchors N0 and therefore absolute
-# growth / respiration (and Fig 6, and the N0 Monte-Carlo).
+# ===== USER INPUT: inoculation density (Ninoc) - FALLBACK ONLY ===============
+# Only used when N0_METHOD = "initial" (the default depletion-anchored method
+# derives N0 from FC_Final instead - see below). Inoculation density (cells / L).
 #
-# TWO WAYS to supply it (05_oxygen_fits.R):
-#   (a) Per-curve CSV (preferred, like the original pipeline): put a file at
-#       data/Ninoc.csv (or data/Ninoc_and_deltaTime_to_N0.csv) with columns
+# TWO WAYS to supply it (05_oxygen_fits.R), for the "initial" fallback:
+#   (a) Per-curve CSV: data/Ninoc.csv with columns
 #         Taxon, Replicate, N_inoculation_cells_per_L, [delta_Ninoc_to_N0_min]
 #       If delta_Ninoc_to_N0_min is present it overrides the trimming-derived
 #       delay for that curve; otherwise the delay from 02 is used.
@@ -149,16 +148,68 @@ load_ninoc_table <- function() {
   tb[, c("Taxon", "Replicate", "N_inoculation_cells_per_L", "delta_Ninoc_to_N0_min")]
 }
 
-# N0 anchoring for per-cell respiration.
-#   TRUE  = N0 = N_inoc * exp(r * delta), delta = time from inoculation to the
-#           trim start (recorded per curve by 02_trimming as delta_Ninoc_to_N0_min).
-#   FALSE = N0 = N_inoc (anchor at consumption onset; removes the exp(r*delta)
-#           amplification of fit noise into respiration).
+# N0 anchoring for the "initial" fallback ONLY (used when N0_METHOD = "initial";
+# the default depletion-anchored method below does not use this flag).
+#   TRUE  = N0 = N_inoc * exp(r * delta), delta = inoculation -> trim start.
+#   FALSE = N0 = N_inoc (anchor at consumption onset).
 N0_BACKPROJECT <- TRUE
 
 # Minutes between inoculation and the FIRST O2 reading. Only used as a fallback
 # additive offset when 02's per-curve delta is unavailable. Set to your protocol.
 INOC_DELAY_MIN <- 0
+
+# ===== Depletion-anchored N0 (default method) ================================
+# N0 is derived from the FINAL flow-cytometry count (OD_r_FC_r.csv, FC_Final),
+# projected back to the fit start over the interval during which growth actually
+# occurred:
+#     N0 = FC_Final * FC_TO_CELLS_PER_L * exp(-r * (t_depletion - fit_start))
+# t_depletion = the time each vial reaches DEPLETION_FRAC of its starting O2, i.e.
+# when O2 runs out and aerobic growth stops. This uses the true growth interval and
+# removes the -r*delta geometric coupling of the initial-count back-projection
+# (the artefact that made per-cell R anti-correlate with growth). r and the fit
+# windows are unchanged; only N0 (and therefore R, CUE) changes.
+# Set N0_METHOD <- "initial" to fall back to the old N_inoc * exp(r*delta) route.
+N0_METHOD         <- "depletion"   # "depletion" (default) or "initial"
+DEPLETION_FRAC    <- 0.10          # O2 fraction remaining that marks growth-stop (90% depleted)
+FC_TO_CELLS_PER_L <- 909916        # FC events -> cells/L (dilution x sample-volume calibration);
+                                   # sets ABSOLUTE scale only - slope and relative R are independent of it.
+OD_FC_CSV         <- file.path(data_dir, "OD_r_FC_r.csv")
+
+# Per-vial O2 depletion time from the full raw series (LONG_CSV). Returns
+# Taxon, Replicate, t_depletion_min, O2_start, depleted (FALSE = threshold never
+# reached within the recording; the recording end is then used as a lower bound).
+load_depletion_table <- function() {
+  if (!file.exists(LONG_CSV)) return(NULL)
+  raw <- tryCatch(readr::read_csv(LONG_CSV, show_col_types = FALSE), error = function(e) NULL)
+  if (is.null(raw) || !all(c("Taxon", "Replicate", "Time", "Oxygen") %in% names(raw))) return(NULL)
+  raw <- raw[order(raw$Taxon, raw$Replicate, raw$Time), ]
+  out <- by(raw, list(raw$Taxon, raw$Replicate), function(g) {
+    if (nrow(g) < 3) return(NULL)
+    o0  <- mean(head(g$Oxygen, 3), na.rm = TRUE)
+    hit <- which(g$Oxygen <= DEPLETION_FRAC * o0)
+    reached <- length(hit) > 0
+    data.frame(Taxon = as.character(g$Taxon[1]), Replicate = as.character(g$Replicate[1]),
+               t_depletion_min = if (reached) g$Time[hit[1]] else max(g$Time, na.rm = TRUE),
+               O2_start = o0, depleted = reached, stringsAsFactors = FALSE)
+  })
+  do.call(rbind, out)
+}
+
+# Final flow-cytometry counts (events) per curve, from OD_r_FC_r.csv.
+load_fc_final <- function() {
+  if (!file.exists(OD_FC_CSV)) return(NULL)
+  tb <- tryCatch(readr::read_csv(OD_FC_CSV, show_col_types = FALSE), error = function(e) NULL)
+  if (is.null(tb)) return(NULL)
+  names(tb) <- trimws(names(tb))
+  if (!all(c("Taxon", "Replicate", "FC_Final") %in% names(tb))) return(NULL)
+  data.frame(Taxon = as.character(tb$Taxon), Replicate = as.character(tb$Replicate),
+             FC_Final = as.numeric(tb$FC_Final), stringsAsFactors = FALSE)
+}
+
+# Depletion-anchored N0 (cells/L): back-project FC_Final to the fit start.
+n0_depletion <- function(FC_Final, r_per_min, t_depletion_min, fit_start_min) {
+  FC_Final * FC_TO_CELLS_PER_L * exp(-r_per_min * (t_depletion_min - fit_start_min))
+}
 
 # ===== USER INPUT: cell carbon ===============================================
 # A bacterial cell modelled as a rod (prolate capsule): a cylinder of length
@@ -328,4 +379,4 @@ save_png_pdf <- function(plot, path_noext, width, height, dpi = 600) {
 message("config.R loaded: base_dir = ", base_dir)
 message("  Project: bacterial O2 respiration (Taxon x Replicate) | figures-only pipeline")
 message("  N_inoc = ", N_inoculation_cells_per_L, " cells/L | cell C = ",
-        round(CELL_CARBON_FG_PER_CELL, 2), " fg | backproject N0 = ", N0_BACKPROJECT)
+        round(CELL_CARBON_FG_PER_CELL, 2), " fg | N0 method = ", N0_METHOD)
