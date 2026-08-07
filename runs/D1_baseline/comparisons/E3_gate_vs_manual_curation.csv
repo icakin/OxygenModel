@@ -1,0 +1,12 @@
+metric,value
+series in the run,75
+series that produced a fit,75
+series passing fit_ok (automatic gate),75
+series failing fit_ok (automatic gate),0
+series removed by plot_exclude_points.csv (manual),0
+overlap: manually excluded AND automatically failed,0
+manually excluded but automatically PASSING,0
+automatically failed but NOT manually excluded,0
+curves with a manual fit window in manual_fit_windows.csv,75
+  of which both fit_start and fit_end are set,75
+  of which only one side is set,0
