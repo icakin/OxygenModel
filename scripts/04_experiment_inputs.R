@@ -117,9 +117,23 @@ server <- function(input, output, session) {
   })
 }
 
+# ---- Launch ------------------------------------------------------------------
+# HEADLESS GUARD: previously the non-interactive branch launched the app AND
+# opened a browser, which made an unattended run block forever. The app now
+# only starts in an interactive session, or when OXYMODEL_LAUNCH_APPS=1 is set.
+.launch_app <- interactive() ||
+  identical(Sys.getenv("OXYMODEL_LAUNCH_APPS"), "1")
+
 if (interactive()) {
   shinyApp(ui, server)
-} else {
+} else if (.launch_app) {
   message("Launching experiment-inputs app at http://127.0.0.1:7799 ...")
   runApp(shinyApp(ui, server), host = "127.0.0.1", port = 7799, launch.browser = TRUE)
+} else {
+  message("04_experiment_inputs: non-interactive session - app NOT launched.")
+  message("  Its committed output is treated as an INPUT to the pipeline:")
+  message("    ", cell_csv)
+  message("  To edit it, open this file in RStudio and 'Run App', or run")
+  message("    OXYMODEL_LAUNCH_APPS=1 Rscript scripts/04_experiment_inputs.R")
+  invisible(NULL)
 }
