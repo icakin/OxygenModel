@@ -53,7 +53,7 @@ D1 sets up `reports/_shared/` and the template; later prompts copy it.
 **Baseline**
 
 1. `D1_baseline_reproduction_prompt.md` — ✅ pin the environment, make the pipeline run
-   unattended (add `10_temperature_cue.R` to the runner; guard the two Shiny apps),
+   unattended (add the temperature-CUE stage to the runner; guard the two Shiny apps),
    regenerate everything into `runs/D1_baseline/`, and run three comparisons: modular
    pipeline vs committed outputs, modular vs `scripts/original_scripts/` (the code that
    produced the paper — the restructure at `ed5e1a6` has never been checked against it),
@@ -98,21 +98,29 @@ D1 sets up `reports/_shared/` and the template; later prompts copy it.
 
 **Structure and provenance**
 
-3. `D3` — ⏳ the data contract: generalise `config.R` and `01`–`10` so the engine ingests
-   both the bacterial series and a *Candida*-style temperature series, per the scoping
-   D1 produces.
-4. `D4` — ⏳ curation provenance: instrument `03_trim_selector.R` (~1,500 lines) with a
-   decision log — operator, timestamp, action, reason code from a fixed vocabulary — make
-   the displayed window identical to the fitted one, and measure inter-operator agreement
-   on a re-trimmed subset. Fix it here so applications inherit it.
+> **No prompt file exists yet for D3 or D4.** They are specified below but not
+> written; there is nothing in this folder to run for either. D5 is the next
+> prompt with a file.
+
+3. `D3` — ⏳ *(not yet written)* the data contract: generalise `config.R` and the numbered
+   stages so the engine ingests both the bacterial series and a *Candida*-style
+   temperature series, per the scoping D1 produces.
+4. `D4` — ⏳ *(not yet written)* curation provenance: instrument `03_trim_selector.R`
+   (~1,500 lines) with a decision log — operator, timestamp, action, reason code from a
+   fixed vocabulary — make the displayed window identical to the fitted one, and measure
+   inter-operator agreement on a re-trimmed subset. Fix it here so applications inherit it.
 
 **The Bayesian upgrade**
 
-5. `D5` — ⏳ v0: faithful port of the current estimator into a testable form; regression
-   baseline; the validation suite assembled from `07_cutoff_sensitivity`,
-   `08_montecarlo_N0` and `09_simulation_recovery`, extended to cover the *r*–*K* joint
-   behaviour and misspecification (lag, drift, saturation) rather than only recovery
-   under the model it fits.
+5. `D5_estimator_uncertainty_prompt.md` — ⏳ **next to run.** v0: faithful port of the
+   current estimator into a testable form; regression baseline; the validation suite
+   assembled from the cutoff-sensitivity, Monte-Carlo-N₀ and simulation-recovery stages,
+   extended to cover the *r*–*K* joint behaviour and misspecification (lag, drift,
+   saturation) rather than only recovery under the model it fits.
+
+   > Note: `12_joint_rK_estimator.R` already landed on `main` independently and
+   > propagates the within-curve *r*–*K* covariance through a hierarchical
+   > measurement-error model in Stan. D5 should build on it rather than duplicate it.
 6. `D6` — ⏳ v1: one-stage hierarchical fit to the traces in `brms` — correlated random
    effects, AR(1) residuals. Propagates the *r*–*K* covariance; ends the measurement-error
    understatement; non-respiring wells become `r ≈ 0` rather than deletions.
@@ -122,13 +130,26 @@ D1 sets up `reports/_shared/` and the template; later prompts copy it.
 9. `D9` — ⏳ v4: maintenance vs growth-associated respiration, `q = m + Y⁻¹r` — the split
    the paper's introduction describes but the model does not implement.
 
+**Housekeeping** — not analyses; they move files and open pull requests. They change no
+number and write no report.
+
+- `handover_tidy_and_push_prompt.md` — ✅ tidy the working tree, write the run manifest
+  and gitignore policy, push the review branch.
+- `packaging_pr_prompt.md` — reapply the environment and execution changes (pinned
+  `renv.lock`, headless guards, complete `run_all.sh`) onto the upstream `main` as a
+  science-free PR.
+- `prompts_and_reports_pr_prompt.md` — this folder and `reports/` onto `main`, so the
+  specification record stops being branch-dependent.
+
 **Blocked**
 
 - Temperature compensation. `T_internal [°C]` is recorded by the PreSens exports and
   stripped at conversion; in the *Candida* plates the sample runs up to 4.8 K below the
   set point the optode compensates at, over exactly the pre-window interval. Needs the
   original `.xlsx` exports (requested).
-- Packaging. Deliberately last — no point refactoring a moving target.
+- ~~Packaging. Deliberately last — no point refactoring a moving target.~~ Done: see
+  `packaging_pr_prompt.md` above. The pinned environment, the headless guards and the
+  complete runner are now a separate science-free PR.
 
 ## The through-line
 
