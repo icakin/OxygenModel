@@ -38,7 +38,26 @@ BASE <- normalizePath("../..", mustWork = TRUE)
 CMP  <- file.path(BASE, "runs", "D1_baseline", "comparisons")
 rd   <- function(f) suppressWarnings(suppressMessages(
   readr::read_csv(file.path(CMP, f), show_col_types = FALSE, progress = FALSE)))
-VERS <- jsonlite::fromJSON(file.path(BASE, "env", "versions.json"))
+# env/versions.json feeds the provenance footer only - no number in this report
+# depends on it. It is written by scripts/00_install.R, whose output shape has
+# changed over time (the Quarto / PDF-engine fields were dropped when the
+# installer stopped requiring Quarto), and it arrives with the packaging change
+# rather than with this report. So read it defensively: a missing file or a
+# missing field degrades that one row to "not recorded" instead of aborting the
+# render.
+VERS <- local({
+  p <- file.path(BASE, "env", "versions.json")
+  if (file.exists(p)) jsonlite::fromJSON(p) else list()
+})
+vg <- function(..., default = "not recorded") {
+  x <- VERS
+  for (k in c(...)) {
+    if (!is.list(x) || is.null(x[[k]])) return(default)
+    x <- x[[k]]
+  }
+  x <- as.character(x)
+  if (!length(x) || is.na(x[1]) || !nzchar(x[1])) default else x[1]
+}
 MAN  <- rd("D0_run_manifest.csv") |> tibble::deframe()
 
 kb <- function(x, ...) knitr::kable(x, booktabs = TRUE, linesep = "", ...)
@@ -142,7 +161,7 @@ change to make the pipeline *execute* unattended; all three are listed in §6.1.
 
 `icakin/OxygenModel` is the reference implementation of the oxygen-dynamics
 method published as Cakin et al. 2026 [@cakin2026oxygen]. At commit
-`` `r substr(VERS$git$commit, 1, 7)` `` the repository had just been
+`` `r substr(vg("git", "commit", default = "unknown"), 1, 7)` `` the repository had just been
 restructured from four monolithic scripts into a modular pipeline
 (`config.R`, `01`–`10`, `run_all.R`), with the pre-restructure code retained
 under `scripts/original_scripts/`. The restructure had never been checked
@@ -758,14 +777,14 @@ tibble::tibble(
             "renv lockfile", "Quarto", "PDF engine",
             "Output tree", "Originals scratch tree"),
   Value = c("D1 — baseline reproduction",
-            VERS$git$commit, VERS$git$branch, VERS$recorded_utc,
+            vg("git", "commit"), vg("git", "branch"), vg("recorded_utc"),
             MAN[["run_id"]],
-            VERS$R$version, VERS$R$platform, VERS$R$os,
-            paste0("renv.lock — ", VERS$renv$n_packages, " packages, R ",
-                   VERS$renv$lockfile_R),
-            VERS$quarto$version,
-            paste0(VERS$pdf_engine$name, " — ",
-                   stringr::str_trunc(VERS$pdf_engine$version, 46)),
+            vg("R", "version"), vg("R", "platform"), vg("R", "os"),
+            paste0("renv.lock — ", vg("renv", "n_packages"), " packages, R ",
+                   vg("renv", "lockfile_R")),
+            vg("quarto", "version"),
+            paste0(vg("pdf_engine", "name"), " — ",
+                   stringr::str_trunc(vg("pdf_engine", "version"), 46)),
             MAN[["output_root"]], MAN[["originals_scratch"]])
 ) |> kb(caption = "Provenance. Environment fields come from env/versions.json, written by scripts/00_install.R.")
 ```

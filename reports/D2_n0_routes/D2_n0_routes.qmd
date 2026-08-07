@@ -38,7 +38,26 @@ BASE <- normalizePath("../..", mustWork = TRUE)
 CMP  <- file.path(BASE, "runs", "D2_analysis")
 rd   <- function(f) suppressWarnings(suppressMessages(
   readr::read_csv(file.path(CMP, f), show_col_types = FALSE, progress = FALSE)))
-VERS <- jsonlite::fromJSON(file.path(BASE, "env", "versions.json"))
+# env/versions.json feeds the provenance footer only - no number in this report
+# depends on it. It is written by scripts/00_install.R, whose output shape has
+# changed over time (the Quarto / PDF-engine fields were dropped when the
+# installer stopped requiring Quarto), and it arrives with the packaging change
+# rather than with this report. So read it defensively: a missing file or a
+# missing field degrades that one row to "not recorded" instead of aborting the
+# render.
+VERS <- local({
+  p <- file.path(BASE, "env", "versions.json")
+  if (file.exists(p)) jsonlite::fromJSON(p) else list()
+})
+vg <- function(..., default = "not recorded") {
+  x <- VERS
+  for (k in c(...)) {
+    if (!is.list(x) || is.null(x[[k]])) return(default)
+    x <- x[[k]]
+  }
+  x <- as.character(x)
+  if (!length(x) || is.na(x[1]) || !nzchar(x[1])) default else x[1]
+}
 
 kb <- function(x, ...) knitr::kable(x, booktabs = TRUE, linesep = "", ...)
 kbs <- function(x, caption = NULL, ...) {
@@ -720,13 +739,13 @@ tibble::tibble(
             "renv lockfile", "Quarto", "PDF engine",
             "Baseline compared against", "Route output trees"),
   Value = c("D2 — N0 reconciliation and dual route",
-            VERS$git$commit, VERS$git$branch, VERS$recorded_utc,
-            VERS$R$version, VERS$R$platform, VERS$R$os,
-            paste0("renv.lock — ", VERS$renv$n_packages, " packages, R ",
-                   VERS$renv$lockfile_R),
-            VERS$quarto$version,
-            paste0(VERS$pdf_engine$name, " — ",
-                   stringr::str_trunc(VERS$pdf_engine$version, 44)),
+            vg("git", "commit"), vg("git", "branch"), vg("recorded_utc"),
+            vg("R", "version"), vg("R", "platform"), vg("R", "os"),
+            paste0("renv.lock — ", vg("renv", "n_packages"), " packages, R ",
+                   vg("renv", "lockfile_R")),
+            vg("quarto", "version"),
+            paste0(vg("pdf_engine", "name"), " — ",
+                   stringr::str_trunc(vg("pdf_engine", "version"), 44)),
             "runs/D1_baseline (D1, verified byte-identical)",
             "runs/D2_forward, runs/D2_backward, runs/D2_none")
 ) |> kb(caption = "Provenance. Environment fields come from env/versions.json.")

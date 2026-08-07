@@ -42,8 +42,19 @@ model function, FIT_LOWER/FIT_UPPER, QC thresholds), scripts/05_oxygen_fits.R (t
 what it retains), scripts/09_montecarlo_N0.R, scripts/10_simulation_recovery.R,
 scripts/12_joint_rK_estimator.R (both stages), scripts/08_window_sensitivity.R, and
 results/tables/{oxygen_fit_results.csv, oxygen_fit_curves.csv, oxygen_results_with_R.csv,
-joint_vs_twostage_uncertainty.csv}. Branch off origin/main: `git switch -c gyd/d5-uncertainty
-origin/main`.
+joint_vs_twostage_uncertainty.csv}.
+
+BRANCH: off `gyd/packaging`, not `main` — PR #1 is open but not yet merged, and this prompt needs the
+pinned environment (renv, 00_install.R, run_all.sh) that only exists there.
+`git switch -c gyd/d5-uncertainty gyd/packaging`. It will rebase cleanly once PR #1 and PR #2 land.
+
+PART 0 - complete the runner
+`run_all.R` on main covers 01, 02 and 05-10 only. The packaging branch adds 11. Script 12
+(`12_joint_rK_estimator.R`) is in NEITHER, and this prompt re-runs it twice, so add it — as the last
+stage, guarded so a missing `rstan` degrades to a clear skip message rather than aborting the run.
+Note in the commit message that 03 and 04 remain deliberately outside the runner (they are the Shiny
+apps, whose committed outputs are inputs). Verify `bash scripts/run_all.sh` still completes and still
+reproduces the committed `results/` unchanged before going further.
 
 PART A - residual autocorrelation, and what it does to vcov(nls)
 - Refit every curve exactly as `05` does, and retain the residual series in fit-window time order.
@@ -124,6 +135,8 @@ PART H - PR
   numbers, and an explicit statement that no pipeline number changes. Do not push to `main`.
 
 VERIFY (report all)
+0. Script 12 added to `run_all.R`; `bash scripts/run_all.sh` completes and still reproduces the
+   committed `results/` unchanged (per-file, no table beyond floating-point noise).
 1. Residual lag-1 autocorrelation, AR(1) rho, n_eff and variance-inflation factor: distribution
    overall and by taxon.
 2. Naive vs autocorrelation-corrected SE: median and range of the ratio, for r and for K.
