@@ -44,9 +44,18 @@ scripts/12_joint_rK_estimator.R (both stages), scripts/08_window_sensitivity.R, 
 results/tables/{oxygen_fit_results.csv, oxygen_fit_curves.csv, oxygen_results_with_R.csv,
 joint_vs_twostage_uncertainty.csv}.
 
-BRANCH: off `gyd/packaging`, not `main` — PR #1 is open but not yet merged, and this prompt needs the
-pinned environment (renv, 00_install.R, run_all.sh) that only exists there.
-`git switch -c gyd/d5-uncertainty gyd/packaging`. It will rebase cleanly once PR #1 and PR #2 land.
+BRANCH: PR #1 and PR #2 are both open and unmerged, and this prompt needs BOTH — the pinned
+environment (`renv.lock`, `00_install.R`, `run_all.sh`) lives only on `gyd/packaging`, and
+`reports/_shared/`, which PART G's report must follow, lives only on `gyd/docs`. The user has already
+created the combined branch:
+
+    git switch -c gyd/d5-uncertainty origin/gyd/packaging
+    git merge origin/gyd/docs        # only .gitignore conflicts; keep the union of both rule
+                                     # sets plus the !reports/_shared/header.tex negation
+
+Work on `gyd/d5-uncertainty`. If it does not exist, create it as above. Confirm before starting that
+`renv.lock`, `scripts/run_all.sh` and `reports/_shared/` are all present. It will rebase cleanly once
+PR #1 and PR #2 land. Do not push to `main`, `gyd/packaging` or `gyd/docs`.
 
 PART 0 - complete the runner
 `run_all.R` on main covers 01, 02 and 05-10 only. The packaging branch adds 11. Script 12
