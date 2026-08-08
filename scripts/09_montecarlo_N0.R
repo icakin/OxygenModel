@@ -227,3 +227,111 @@ if (isTRUE(SAVE_PLOTS) && nrow(series_summary_all) > 0) {
 }
 
 message("09_montecarlo_N0: done.")
+
+# =============================================================================
+# D5 EXTENSION - ADDITIVE. Everything above is untouched.
+# =============================================================================
+# The Monte-Carlo above varies N0 MAGNITUDE over a lognormal CV grid. That
+# rescales R by a common factor and leaves its dependence on r alone. The choice
+# of N0 FUNCTIONAL FORM does something different: it changes how R depends on r,
+# which is what determines whether R and growth appear correlated.
+#
+# Three forms, at a MATCHED CONSTANT so the comparison isolates form from
+# magnitude (each route is rescaled to the depletion route's median N0):
+#
+#   depletion  N0 = FC_Final c exp(-r (t_depletion - fit_start))   [the default]
+#   initial    N0 = N_inoc exp(r * delta)                          [the fallback]
+#   none       N0 = FC_Final c                                     [lower bound,
+#              no back-calculation at all - retained for contrast, not a
+#              candidate estimate]
+#
+# R = K O2_ref / N0 throughout, so the spread in R is the inverse of the spread
+# in N0. Writes ONLY to runs/D5_analysis/, after every existing output.
+# =============================================================================
+
+.d5_out <- file.path(base_dir, "runs", "D5_analysis")
+dir.create(.d5_out, showWarnings = FALSE, recursive = TRUE)
+.d5 <- function(f) file.path(.d5_out, f)
+
+.d5_res <- readr::read_csv(RESULTS_FINAL_CSV, show_col_types = FALSE)
+.d5_nin <- load_ninoc_table()
+
+.d5_forms <- .d5_res %>%
+  dplyr::filter(is.finite(K), is.finite(r_per_minute), r_per_minute > 0,
+                is.finite(FC_Final), FC_Final > 0) %>%
+  dplyr::mutate(Taxon = as.character(Taxon), Replicate = as.character(Replicate))
+
+if (!is.null(.d5_nin)) {
+  .d5_forms <- .d5_forms %>%
+    dplyr::left_join(dplyr::mutate(.d5_nin,
+                                   Taxon = as.character(Taxon),
+                                   Replicate = as.character(Replicate)),
+                     by = c("Taxon", "Replicate"))
+} else {
+  .d5_forms$N_inoculation_cells_per_L <- N_inoculation_cells_per_L
+  .d5_forms$delta_Ninoc_to_N0_min <- 0
+}
+
+.d5_forms <- .d5_forms %>%
+  dplyr::mutate(
+    .delta = dplyr::if_else(is.finite(delta_Ninoc_to_N0_min),
+                            delta_Ninoc_to_N0_min, fit_start_min),
+    N0_depletion = FC_Final * FC_TO_CELLS_PER_L *
+      exp(-r_per_minute * (t_depletion_min - fit_start_min)),
+    N0_initial   = N_inoculation_cells_per_L * exp(r_per_minute * .delta),
+    N0_none      = FC_Final * FC_TO_CELLS_PER_L)
+
+# Match each route's median to the depletion route's, so only FORM differs.
+.d5_scale <- function(x, ref) x * (stats::median(ref, na.rm = TRUE) /
+                                     stats::median(x, na.rm = TRUE))
+.d5_long <- dplyr::bind_rows(
+  dplyr::transmute(.d5_forms, Taxon, Replicate, r_per_minute, K, O2_ref,
+                   form = "depletion", N0 = N0_depletion),
+  dplyr::transmute(.d5_forms, Taxon, Replicate, r_per_minute, K, O2_ref,
+                   form = "initial",
+                   N0 = .d5_scale(N0_initial, N0_depletion)),
+  dplyr::transmute(.d5_forms, Taxon, Replicate, r_per_minute, K, O2_ref,
+                   form = "none",
+                   N0 = .d5_scale(N0_none, N0_depletion))) %>%
+  dplyr::mutate(R = K * O2_ref / N0,
+                R_C_fg_cell_h = R * O2_to_C_mass * MG_TO_FG * MIN_TO_H)
+readr::write_csv(.d5_long, .d5("D3_N0_functional_form_per_curve.csv"))
+
+.d5_form_sum <- .d5_long %>%
+  dplyr::group_by(form) %>%
+  dplyr::summarise(
+    n = dplyr::n(),
+    median_R_C_fg_cell_h = stats::median(R_C_fg_cell_h, na.rm = TRUE),
+    sd_log_R = stats::sd(log(R_C_fg_cell_h)),
+    # the diagnostic that matters: does R still depend on growth rate?
+    corr_logR_logr = stats::cor(log(R_C_fg_cell_h), log(r_per_minute),
+                                use = "complete.obs"),
+    .groups = "drop")
+readr::write_csv(.d5_form_sum, .d5("D3_N0_functional_form_summary.csv"))
+
+.d5_spread <- .d5_long %>%
+  dplyr::select(Taxon, Replicate, form, R_C_fg_cell_h) %>%
+  tidyr::pivot_wider(names_from = form, values_from = R_C_fg_cell_h) %>%
+  dplyr::mutate(ratio_initial_over_depletion = initial / depletion,
+                ratio_none_over_depletion    = none / depletion)
+readr::write_csv(.d5_spread, .d5("D3_N0_form_ratios_per_curve.csv"))
+
+.d5_spread_sum <- tibble::tibble(
+  quantity = c("median R ratio initial / depletion (matched constant)",
+               "IQR of that ratio",
+               "median R ratio none / depletion (matched constant)",
+               "IQR of that ratio",
+               "corr(log R, log r) under depletion",
+               "corr(log R, log r) under initial",
+               "corr(log R, log r) under none"),
+  value = c(stats::median(.d5_spread$ratio_initial_over_depletion, na.rm = TRUE),
+            stats::IQR(.d5_spread$ratio_initial_over_depletion, na.rm = TRUE),
+            stats::median(.d5_spread$ratio_none_over_depletion, na.rm = TRUE),
+            stats::IQR(.d5_spread$ratio_none_over_depletion, na.rm = TRUE),
+            .d5_form_sum$corr_logR_logr[.d5_form_sum$form == "depletion"],
+            .d5_form_sum$corr_logR_logr[.d5_form_sum$form == "initial"],
+            .d5_form_sum$corr_logR_logr[.d5_form_sum$form == "none"]))
+readr::write_csv(.d5_spread_sum, .d5("D3_N0_form_headline.csv"))
+
+message("  [D5 extension] N0 functional-form arm -> runs/D5_analysis/")
+print(as.data.frame(.d5_form_sum), row.names = FALSE, digits = 4)

@@ -1,0 +1,8 @@
+quantity,value
+median max|dK_pct| under M0,14.44899125873425
+median max|dK_pct| under M2g,14.534434990688775
+median max|dR_pct| under M0,14.671995911943785
+median max|dR_pct| under M2g,15.341167137218138
+Spearman ordering M2g vs M0,0.9999999999999998
+pooled log R ~ log r slope under M0 (NOT the published Fig 6 slope),-7.20582223221659e-4
+pooled log R ~ log r slope under M2g,0.028539399114454127

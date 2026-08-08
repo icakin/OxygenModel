@@ -1,0 +1,10 @@
+quantity,value
+"observed G spread, max/min",10.693703680977807
+intercept-slope sampling correlation at the observed design,-0.9259809673199269
+relative precision of m at the observed design (sd/|m|),2.295704957601932
+% of simulated datasets giving a NEGATIVE m,31.95
+residual sd used (from the observed fit),499.7236356689543
+assumed true m (20% of mean R),66.23352649104443
+assumed true Y,0.3
+"n needed for 20% relative precision on m, at this noise level",9882
+n actually available,75

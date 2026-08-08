@@ -49,8 +49,25 @@ for (s in c("01_longdata.R", "02_trimming.R", "05_oxygen_fits.R",
   run_script(s)
 }
 
+# 12 joint_rK_estimator - LAST, and guarded. It is the only stage that needs
+# rstan and a C++ toolchain, and it compiles a Stan model on first use. A machine
+# without either should still get every other stage, so a missing rstan degrades
+# to a clear skip message rather than aborting the run.
+if (requireNamespace("rstan", quietly = TRUE)) {
+  run_script("12_joint_rK_estimator.R")
+} else {
+  message("\n", strrep("=", 70))
+  message("SKIPPING 12_joint_rK_estimator.R - package 'rstan' is not installed.")
+  message("  Every other stage has run. 12 propagates the within-curve r-K")
+  message("  covariance into the taxon-level estimates; without it,")
+  message("  results/tables/joint_vs_twostage_uncertainty.csv is not refreshed.")
+  message("  To enable it:  Rscript scripts/00_install.R")
+  message(strrep("=", 70))
+}
+
 message("\n", strrep("=", 70))
 message("Done: trimming, fits, figures, cutoff + window sensitivity, MC (Fig 2, 6, S1, S2, Supp 3).")
 message("Optional interactive tuning: 03_trim_selector.R and 04_experiment_inputs.R (Run App),")
-message("then re-run 05 onward. Run 11_temperature_cue.R separately (temperature data).")
+message("then re-run 05 onward. Run 11_temperature_cue.R separately (temperature data),")
+message("and 13_depletion_frac_sensitivity.R for the DEPLETION_FRAC sweep.")
 message(strrep("=", 70))

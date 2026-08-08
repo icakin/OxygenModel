@@ -1,0 +1,22 @@
+table,class,n_rows_ref,n_rows_new,n_cols_compared,max_abs_diff,max_rel_diff,worst_column,note
+data_Fig6_RIS_COLLAPSED_centeredX.csv,DIVERGENT,75,75,22,113219837200.56772,1.8992666888918952,b0,cols only in committed: fit_start_min/N_inoc_cells_per_L/cell_carbon_fg; cols only in original-rerun: N_inoculation_cells_per_L
+Fig6_taxon_specific_lines_COLLAPSED_centeredX_EXTENDED.csv,DIVERGENT,1800,1800,3,0.6816597715911059,0.28121446093508645,mu_tax_collapsed,aligned by row order (no key columns)
+Fig6b_taxon_specific_slopes.csv,DIVERGENT,15,15,5,0.7669744614257128,1.979508662158328,hi,
+growth_rates_combined.csv,DIVERGENT,75,75,6,0.27302286738236603,0.00633145926805345,doubling_time_O2,
+method_effects_estimates.csv,DIVERGENT,3,3,3,1.637459501883931e-5,7.447812089203732e-4,CI_lower,
+method_effects_significance.csv,DIVERGENT,3,3,5,0.01754896180506993,0.04570426399607771,p.value,aligned by row order (no key columns)
+N0_MC_ourmodel_overall_summary_ALL.csv,IDENTICAL,4,4,7,2.7755575615628914e-16,9.971548247776855e-16,R_rel_sd_max,
+N0_MC_ourmodel_taxon_summary_ALL.csv,IDENTICAL,60,60,7,5.551115123125783e-16,1.4241257066718372e-15,R_rel_sd_min,
+Oxygen_Data_Filtered.csv,DIVERGENT,9462,9850,1,0,0,Oxygen,cols only in committed: curve_code/O2_fit; row count 9462 vs 9850; 9422 of 9462/9850 rows matched on Taxon+Replicate+Time
+oxygen_fit_curves.csv,DIVERGENT,8035,9249,12,457.0767066155116,1,Time0_min,row count 8035 vs 9249; 7774 of 8035/9249 rows matched on Taxon+Replicate+Time_min
+oxygen_fit_results.csv,DIVERGENT,75,75,9,457.0767066155116,0.6941789944305541,C_tot_mg_per_L,cols only in committed: fit_start_min
+oxygen_model_comparison_O2_ge_0.5_summary.csv,DIVERGENT,1,1,11,0.0013940637205432996,0.10267728787191312,max_abs_K_ratio_minus1,aligned by row order (no key columns)
+oxygen_model_results_good_only_NEWformula.csv,IDENTICAL,24,24,17,0,0,N0_cells_per_mL,
+oxygen_model_results_main.csv,DIVERGENT,75,75,9,133.39201894867733,0.6870819227937037,lnO2_change_per_min,
+oxygen_model_results_O2_ge_0.5.csv,DIVERGENT,75,75,9,133.39201894867733,0.2070627621372487,K,
+oxygen_results_with_R.csv,DIVERGENT,75,75,16,86742539013.69788,0.6941789944305541,C_tot_mg_per_L,cols only in committed: fit_start_min/N_inoc_cells_per_L/cell_carbon_fg; cols only in original-rerun: N_inoculation_cells_per_L
+SharpeSchoolfield_Temperature_Params_NEWformula.csv,IDENTICAL,3,3,8,1.7763568394002505e-14,4.8237403055738834e-15,E_lwr_eV,
+Skipped_Series_Log.csv,DIVERGENT,0,0,1,NA,NA,NA,cols only in committed: curve_code
+synthetic_parameter_recovery_results.csv,DIVERGENT,12150,12150,12,5.33858155460365e-8,1.1451235281799376e-5,r_est,aligned by row order (no key columns)
+Table_S2_synthetic_parameter_recovery_summary.csv,DIVERGENT,27,27,11,1.2732073289764556e-8,9.08610431686947e-6,R_rel_bias,
+Table_S3_oxygen_model_comparison_O2_ge_0.5.csv,DIVERGENT,75,75,8,0.004509345319554603,1.8002446183053071,K_diff,

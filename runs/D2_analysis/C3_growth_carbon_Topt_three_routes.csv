@@ -1,0 +1,4 @@
+route,response,best_model,Topt_C,E_eV
+forward,growth_C_fg_per_hr (Fig 7 panel A),bol,40,0.13408666669149305
+backward,growth_C_fg_per_hr (Fig 7 panel A),bol,40,0.13408672777105132
+none,growth_C_fg_per_hr (Fig 7 panel A),bol,40,0.1

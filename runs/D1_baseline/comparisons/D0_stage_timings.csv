@@ -1,0 +1,11 @@
+stage,script,mode,seconds,status
+01_longdata,scripts/01_longdata.R,run,1.95,ok
+02_trimming,scripts/02_trimming.R,run,8.31,ok
+03_trim_selector,scripts/03_trim_selector.R,source,2.21,ok
+04_experiment_inputs,scripts/04_experiment_inputs.R,source,1.75,ok
+05_oxygen_fits,scripts/05_oxygen_fits.R,run,7.03,ok
+06_main_figures,scripts/06_main_figures.R,run,7.93,ok
+07_cutoff_sensitivity,scripts/07_cutoff_sensitivity.R,run,10.04,ok
+08_montecarlo_N0,scripts/08_montecarlo_N0.R,run,3.33,ok
+09_simulation_recovery,scripts/09_simulation_recovery.R,run,15.71,ok
+10_temperature_cue,scripts/10_temperature_cue.R,run,4.78,ok

@@ -1,0 +1,16 @@
+Taxon,n_reps,perrep_values,perrep_mean,n_distinct_in_CellCounts,CellCounts_value,rounded_mean,constant_across_replicates,equals_rounded_mean
+Acinetobacter,5,"83, 115, 89, 77, 105",93.8,1,94,94,TRUE,TRUE
+Aeromonas_A,5,"216, 213, 155, 173, 189",189.2,1,189,189,TRUE,TRUE
+Aeromonas_B,5,"155, 146, 127, 128, 138",138.8,1,139,139,TRUE,TRUE
+Arthrobacter,5,"204, 186, 202, 231, 201",204.8,1,205,205,TRUE,TRUE
+Bacillus,5,"11, 17, 12, 11, 34",17,1,17,17,TRUE,TRUE
+Burkholderia,5,"296, 283, 273, 215, 236",260.6,1,261,261,TRUE,TRUE
+Buttiauxella,5,"224, 219, 212, 245, 236",227.2,1,227,227,TRUE,TRUE
+Chromobacterium,5,"138, 139, 115, 123, 134",129.8,1,130,130,TRUE,TRUE
+Chryseobacterium,5,"333, 246, 206, 261, 266",262.4,1,262,262,TRUE,TRUE
+Flavobacterium_A,5,"143, 311, 147, 183, 130",182.8,1,183,183,TRUE,TRUE
+Flavobacterium_B,5,"96, 91, 109, 117, 84",99.4,1,99,99,TRUE,TRUE
+Herbaspirillum,5,"393, 284, 314, 311, 356",331.6,1,332,332,TRUE,TRUE
+Pseudomonas,5,"129, 127, 124, 181, 145",141.2,1,141,141,TRUE,TRUE
+Serratia,5,"239, 103, 128, 124, 100",138.8,1,139,139,TRUE,TRUE
+Yersinia,5,"83, 151, 109, 97, 101",108.2,1,108,108,TRUE,TRUE
