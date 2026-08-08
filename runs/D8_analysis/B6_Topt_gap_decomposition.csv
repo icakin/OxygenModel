@@ -1,0 +1,8 @@
+step,value_C
+"CUE with N0 temperature-INDEPENDENT, quadratic-in-log fit",25.35411829733102
+"CUE as 11_temperature_cue.R computes it (N0 = exp(45 r)), same fit",27.861148906456222
+pipeline's published Sharpe-Schoolfield T_opt(CUE),32.441471571906355
+  -> shift attributable to the N0 exp(45 r) back-projection,2.507030609125202
+  -> shift attributable to the FUNCTIONAL FORM (SS vs quadratic),4.580322665450133
+  -> total gap,7.087353274575335
+validation: max |reconstructed CUE_45 - pipeline CUE|,1.2842197094631302e-7
