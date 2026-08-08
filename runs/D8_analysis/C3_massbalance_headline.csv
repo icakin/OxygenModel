@@ -1,0 +1,11 @@
+quantity,value
+"median CUE, mass balance (whole run)",0.42171362482474173
+"median CUE, kinetic (fit window)",0.3936413802361097
+median ratio massbalance / kinetic,1.0770650024411221
+IQR of that ratio,0.044080102060884974
+"replicates with CUE outside [0,1] or FC_Final <= FC_Initial",0
+median fraction of O2 consumed AFTER the window closed,0.4355524079320113
+"corr(ratio, fraction of O2 post-window)",0.20351161161735068
+  its p-value,0.07990503060286105
+"corr(ratio, fraction of TIME post-window)",-0.29414996360030365
+  its p-value,0.010420082326713691

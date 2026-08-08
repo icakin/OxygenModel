@@ -1,0 +1,7 @@
+quantity,value,lo,hi
+argmin (K/r)  [brief's version],23.952453006884557,22.282958458589704,24.930919766380867
+argmin (K*O2_ref/r)  [solubility-corrected],25.30443055100068,24.021177924328093,26.137180828920187
+pipeline T_opt(CUE) from 11_temperature_cue.R,32.441471571906355,NA,NA
+fold-change in K/r across 20-40 C,7.057523275314049,NA,NA
+fold-change in K*O2_ref/r across 20-40 C,5.187757076995776,NA,NA
+O2_ref at 20 C / O2_ref at 40 C,1.3584668551680805,NA,NA

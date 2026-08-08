@@ -1,0 +1,11 @@
+statistic,value
+n series,75
+delta min (min),46.03
+delta median (min),60.07
+delta max (min),81.07
+exp(r*delta) min,1.8046420102831804
+exp(r*delta) median,3.8571632680825942
+exp(r*delta) max,12.13047900098959
+N0/N_inoc median,3.8571632680825956
+fraction of series with exp(r*delta) > 2,0.9733333333333334
+fraction with exp(r*delta) > 5,0.24

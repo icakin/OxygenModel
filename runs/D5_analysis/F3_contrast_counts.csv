@@ -1,0 +1,4 @@
+model,n_contrasts,resolved_uncorrected,resolved_holm,pct_resolved_holm,median_se
+joint posterior (includes replicate spread),105,69,48,45.714285714285715,0.09376219063796025
+within-curve only (AR(1)-corrected),105,104,104,99.04761904761905,0.0021157321461888344
+within-curve only (naive),105,104,104,99.04761904761905,0.002173665924763559
