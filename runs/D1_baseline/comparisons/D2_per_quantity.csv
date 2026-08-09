@@ -1,0 +1,26 @@
+quantity,file,column,n,max_abs_diff,max_rel_diff,verdict
+growth rate r (min^-1),oxygen_fit_results.csv,r_per_minute,75,1.7832936073744476e-4,0.006331459268053118,DIVERGENT
+scaling K,oxygen_fit_results.csv,K,75,3.6021248524126985e-4,0.2316347397217663,DIVERGENT
+fitted intercept O2_0,oxygen_fit_results.csv,O2_0,75,0.0026581190078858175,0.0026506550799199383,DIVERGENT
+reference O2 (O2_ref),oxygen_fit_results.csv,O2_ref,75,0.09000000000000075,0.015211267605633929,DIVERGENT
+fit window length T_end (min),oxygen_fit_results.csv,T_end_min,75,42.999999999999986,0.3282442748091602,DIVERGENT
+total O2 consumed C_tot,oxygen_fit_results.csv,C_tot_mg_per_L,75,3.853490776546076,0.6941789944305541,DIVERGENT
+pseudo R^2,oxygen_fit_results.csv,pseudo_R2,75,2.0302352093215514e-4,2.0302871781708093e-4,DIVERGENT
+reconstructed N0 (cells/L),oxygen_results_with_R.csv,N0_cells_per_L,75,1119480.4319911003,0.010242840325143377,DIVERGENT
+per-cell respiration R,oxygen_results_with_R.csv,R,75,2.870742045083298e-10,0.22898958282251403,DIVERGENT
+respiration R (fg C/cell/h),oxygen_results_with_R.csv,R_C_fg_cell_h,75,6426.9637257013965,0.2282345879351809,DIVERGENT
+growth G (fg C/cell/h),oxygen_results_with_R.csv,G_C_fg_cell_h,75,112.88957992803788,0.498354945952789,DIVERGENT
+r vs OD600 growth rate,growth_rates_combined.csv,r_OD600,75,0,0,IDENTICAL
+r vs flow cytometry,growth_rates_combined.csv,r_FC,75,0,0,IDENTICAL
+r from O2,growth_rates_combined.csv,r_O2,75,1.7832936073744476e-4,0.006331459268053118,DIVERGENT
+cutoff sensitivity r (main),oxygen_model_results_main.csv,r_per_minute,75,7.060268687218013e-5,0.00680494391709326,DIVERGENT
+cutoff sensitivity r (O2>=0.5),oxygen_model_results_O2_ge_0.5.csv,r_per_minute,75,6.862340603099037e-5,0.00680494391709326,DIVERGENT
+MC relative SD of R (median),N0_MC_ourmodel_overall_summary_ALL.csv,R_rel_sd_med,4,2.7755575615628914e-16,6.959338193740402e-16,IDENTICAL
+CUE at each temperature,oxygen_model_results_good_only_NEWformula.csv,carbon_use_efficiency,24,0,0,IDENTICAL
+growth C flux vs temperature,oxygen_model_results_good_only_NEWformula.csv,growth_C_fg_per_hr,24,0,0,IDENTICAL
+respiration C flux vs temp,oxygen_model_results_good_only_NEWformula.csv,resp_C_fg_per_hr,24,0,0,IDENTICAL
+thermal Topt (deg C),SharpeSchoolfield_Temperature_Params_NEWformula.csv,Topt_C,3,0,0,IDENTICAL
+activation energy E (eV),SharpeSchoolfield_Temperature_Params_NEWformula.csv,E_eV,3,0,0,IDENTICAL
+deactivation energy Eh (eV),SharpeSchoolfield_Temperature_Params_NEWformula.csv,Eh_eV,3,0,0,IDENTICAL
+synthetic recovery r bias,Table_S2_synthetic_parameter_recovery_summary.csv,r_bias,27,0,0,IDENTICAL
+synthetic recovery R bias,Table_S2_synthetic_parameter_recovery_summary.csv,R_bias,27,0,0,IDENTICAL

@@ -1,0 +1,57 @@
+% =============================================================================
+% reports/_shared/header.tex - LaTeX preamble shared by every D-series report
+% =============================================================================
+% Included via `include-in-header` in reports/_shared/_template.qmd. Keep this
+% conservative: it has to survive lualatex, xelatex and pdflatex, because the
+% engine depends on whatever `quarto install tinytex` put on the machine.
+% =============================================================================
+
+% --- tables ------------------------------------------------------------------
+% Wide comparison tables are the norm in this series. Allow them to break across
+% pages and to shrink rather than overflow the margin.
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{ragged2e}
+
+% --- rules and spacing -------------------------------------------------------
+\setlength{\heavyrulewidth}{0.9pt}
+\setlength{\lightrulewidth}{0.4pt}
+\renewcommand{\arraystretch}{1.12}
+% Comparison tables have many narrow columns; buy width back from the gutters
+% and stop LaTeX hyphenating short labels like IDENTICAL across two lines.
+\setlength{\tabcolsep}{4pt}
+\hyphenpenalty=1000
+\tolerance=2000
+\emergencystretch=2em
+
+% --- code and verbatim -------------------------------------------------------
+\usepackage{fvextra}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+
+% --- callouts ----------------------------------------------------------------
+\usepackage[most]{tcolorbox}
+
+% --- a verdict box, used at the top of every findings report ------------------
+\newtcolorbox{verdictbox}[1][]{
+  breakable,
+  colback=black!3,
+  colframe=black!55,
+  boxrule=0.9pt,
+  arc=1.5pt,
+  left=8pt, right=8pt, top=7pt, bottom=7pt,
+  #1
+}
+
+% --- headers / footers -------------------------------------------------------
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0pt}
+
+% --- URLs --------------------------------------------------------------------
+\usepackage{xurl}
+
+% --- keep floats near their text ---------------------------------------------
+\usepackage{float}

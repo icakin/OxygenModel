@@ -1,0 +1,9 @@
+criterion,threshold,n_series,n_fail,failing_series
+pass_REL_SE,max rel SE < 0.15,75,0,
+pass_PVAL,max p < 0.001,75,0,
+pass_R2,pseudo R2 >= 0.90,75,0,
+pass_RESID,residual range < 0.20,75,0,
+pass_K_BOUNDS,0 < K < 0.5,75,0,
+pass_R_BOUNDS,1e-4 <= r <= 0.1,75,0,
+pass_AIC,AIC gain >= 10,75,0,
+pass_MAPE,MAPE < 0.15,75,0,

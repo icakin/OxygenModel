@@ -1,0 +1,13 @@
+quantity,value,source
+FC fixation dilution (490 ul + 10 ul glutaraldehyde),1.020408,"paper, Materials and methods"
+FC PBS dilution (50 ul into 450 ul PBS),10.0,"paper, Materials and methods"
+FC stain dilution (2.5 ul SYBR into 500 ul),1.0050,"paper, Materials and methods"
+FC total dilution factor,10.2551,product of the three above
+CytoFLEX S output unit,events per uL of the MEASURED (diluted) sample,"ASSUMED - instrument default, not stated in the paper"
+"OD600 = 1 -> cells/mL, central",8e+08,E. coli reference used by the standard OD600 bio-calculators (Agilent; Sigma-Aldrich OD600 application note)
+"OD600 = 1 -> cells/mL, low",5e+08,documented spread across strain / phase / optics
+"OD600 = 1 -> cells/mL, high",2e+09,documented spread across strain / phase / optics
+Taxon-specific OD-to-cell factor,NONE AVAILABLE,no published factor exists for these 15 environmental isolates - see QUESTIONS FOR THE AUTHORS
+E. coli reference cell volume,0.3600 um^3,"0.5 x 2.0 um rod, using this repo's own prolate-capsule formula (config.R)"
+Size adjustment,linear in biovolume,APPROXIMATE sensitivity only; true OD-per-cell scaling is steeper than linear (Koch light-scattering)
+Paper's stated OD at aliquoting,0.0005,"paper, Materials and methods"

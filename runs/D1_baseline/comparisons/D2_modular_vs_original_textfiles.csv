@@ -1,0 +1,4 @@
+file,class,n_lines_ref,n_lines_new,n_lines_differing,note
+mixed_model_FC_summary.txt,DIVERGENT,27,27,7,"33 numeric tokens, max relative difference 0.531"
+mixed_model_Fig6_RIS_centeredX.txt,NOT REGENERATED,NA,NA,NA,no counterpart in modular
+mixed_model_OD600_summary.txt,DIVERGENT,27,27,7,"36 numeric tokens, max relative difference 1.29"

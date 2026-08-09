@@ -11,6 +11,22 @@ single dissolved-oxygen time series, plus a temperature-gradient CUE experiment.
 - `results/figures/` — main-text and supplementary figures (TIFF for main figs, PDF for multi-page diagnostics)
 - `results/rds/`     — serialised model objects (e.g. the joint estimator fit)
 
+## Specifications and reports
+
+- `prompts/`  — one file per commissioned piece of work (the **D-series**), plus an index.
+  Each records what was asked for, so every analysis in this repository has a written
+  specification rather than only a result.
+- `reports/`  — the findings. Each substantive analysis gets a self-contained Quarto
+  report rendered to PDF in its own folder, with the `.qmd` committed beside it;
+  `reports/_shared/` holds the template and style all reports follow, and
+  `reports/RUNBOOK.md` is the from-scratch operating guide.
+- `SETUP.md`  — install and run on a new machine (prerequisites, one install command,
+  expected runtime, disk).
+
+The convention: **findings get a rendered PDF, reference material gets plain markdown**,
+and reports render artefact CSVs rather than recomputing analyses inside the document,
+so the PDF is a view of a run rather than a second implementation of it.
+
 ## The model
 
 Each Taxon × Replicate O₂ trace is fit with the normalised model (N₀ fixed to 1 inside the fit):

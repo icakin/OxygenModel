@@ -1,0 +1,26 @@
+quantity,file,column,n,max_abs_diff,max_rel_diff,verdict
+growth rate r (min^-1),oxygen_fit_results.csv,r_per_minute,75,0,0,IDENTICAL
+scaling K,oxygen_fit_results.csv,K,75,0,0,IDENTICAL
+fitted intercept O2_0,oxygen_fit_results.csv,O2_0,75,0,0,IDENTICAL
+reference O2 (O2_ref),oxygen_fit_results.csv,O2_ref,75,0,0,IDENTICAL
+fit window length T_end (min),oxygen_fit_results.csv,T_end_min,75,0,0,IDENTICAL
+total O2 consumed C_tot,oxygen_fit_results.csv,C_tot_mg_per_L,75,0,0,IDENTICAL
+pseudo R^2,oxygen_fit_results.csv,pseudo_R2,75,0,0,IDENTICAL
+reconstructed N0 (cells/L),oxygen_results_with_R.csv,N0_cells_per_L,75,0,0,IDENTICAL
+per-cell respiration R,oxygen_results_with_R.csv,R,75,0,0,IDENTICAL
+respiration R (fg C/cell/h),oxygen_results_with_R.csv,R_C_fg_cell_h,75,0,0,IDENTICAL
+growth G (fg C/cell/h),oxygen_results_with_R.csv,G_C_fg_cell_h,75,0,0,IDENTICAL
+r vs OD600 growth rate,growth_rates_combined.csv,r_OD600,75,0,0,IDENTICAL
+r vs flow cytometry,growth_rates_combined.csv,r_FC,75,0,0,IDENTICAL
+r from O2,growth_rates_combined.csv,r_O2,75,0,0,IDENTICAL
+cutoff sensitivity r (main),oxygen_model_results_main.csv,r_per_minute,75,0,0,IDENTICAL
+cutoff sensitivity r (O2>=0.5),oxygen_model_results_O2_ge_0.5.csv,r_per_minute,75,0,0,IDENTICAL
+MC relative SD of R (median),N0_MC_ourmodel_overall_summary_ALL.csv,R_rel_sd_med,4,5.551115123125783e-17,4.15313626872917e-16,IDENTICAL
+CUE at each temperature,oxygen_model_results_good_only_NEWformula.csv,carbon_use_efficiency,24,0,0,IDENTICAL
+growth C flux vs temperature,oxygen_model_results_good_only_NEWformula.csv,growth_C_fg_per_hr,24,0,0,IDENTICAL
+respiration C flux vs temp,oxygen_model_results_good_only_NEWformula.csv,resp_C_fg_per_hr,24,0,0,IDENTICAL
+thermal Topt (deg C),SharpeSchoolfield_Temperature_Params_NEWformula.csv,Topt_C,3,0,0,IDENTICAL
+activation energy E (eV),SharpeSchoolfield_Temperature_Params_NEWformula.csv,E_eV,3,0,0,IDENTICAL
+deactivation energy Eh (eV),SharpeSchoolfield_Temperature_Params_NEWformula.csv,Eh_eV,3,0,0,IDENTICAL
+synthetic recovery r bias,Table_S2_synthetic_parameter_recovery_summary.csv,r_bias,27,1.311950987165902e-10,3.7385346525642046e-6,DIVERGENT
+synthetic recovery R bias,Table_S2_synthetic_parameter_recovery_summary.csv,R_bias,27,9.972182854426965e-21,1.936880446008235e-6,DIVERGENT

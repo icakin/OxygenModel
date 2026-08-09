@@ -1,0 +1,14 @@
+statistic,value
+n replicates,75
+ratio min,0.4142830641313563
+ratio 5th pct,0.6401811374210216
+ratio 25th pct,0.8222942387916725
+ratio median,0.9904343824521212
+ratio 75th pct,1.0848555780652984
+ratio 95th pct,1.2483431254089192
+ratio max,1.7671975827043176
+n within a factor of 2,74
+n within a factor of 1.5,69
+"n excluded (primary, factor 2)",1
+"n excluded (strict, factor 1.5)",6
+median r_FC / r_O2,0.9956668388734993

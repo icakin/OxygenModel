@@ -1,0 +1,131 @@
+---
+# =============================================================================
+# reports/_shared/_template.qmd - skeleton for every D-series findings report
+# =============================================================================
+# COPY this file to reports/<ID>_<name>/<ID>_<name>.qmd and fill it in.
+# Do not render this template itself; it has no content.
+#
+# The rule (see reports/README.md): a prompt that performs a SUBSTANTIVE
+# ANALYSIS writes one of these, rendered to PDF, with the .qmd committed beside
+# the PDF. A prompt that produces only reference material writes plain markdown.
+# =============================================================================
+title: "<ID>: <one-line title>"
+subtitle: "<what question this report answers>"
+author: "OxygenModel D-series"
+date: today
+date-format: "YYYY-MM-DD"
+format:
+  pdf:
+    documentclass: scrartcl
+    papersize: a4
+    geometry:
+      - top=25mm
+      - bottom=25mm
+      - left=22mm
+      - right=22mm
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    colorlinks: true
+    fig-pos: "H"
+    include-in-header: ../_shared/header.tex
+bibliography: ../_shared/references.bib
+csl: null
+execute:
+  echo: false
+  warning: false
+  message: false
+  cache: false
+knitr:
+  opts_chunk:
+    dev: "pdf"
+---
+
+```{r setup}
+# Every report resolves the project root the same way, and reads only
+# artefacts that were written by a script - never recomputing an analysis
+# inside the report itself.
+suppressPackageStartupMessages({
+  library(tidyverse); library(knitr); library(jsonlite)
+})
+
+BASE <- normalizePath("../..", mustWork = TRUE)
+RUN  <- file.path(BASE, "runs", "<run-id>")
+rd   <- function(p) suppressWarnings(suppressMessages(
+  readr::read_csv(p, show_col_types = FALSE, progress = FALSE)))
+# env/versions.json feeds the provenance footer only. Read it defensively: it is
+# written by scripts/00_install.R, whose output shape has changed over time, so a
+# missing file or a missing field should degrade one row to "not recorded"
+# rather than abort the render. Use vg("a","b") instead of VERS$a$b throughout.
+VERS <- local({
+  p <- file.path(BASE, "env", "versions.json")
+  if (file.exists(p)) jsonlite::fromJSON(p) else list()
+})
+vg <- function(..., default = "not recorded") {
+  x <- VERS
+  for (k in c(...)) {
+    if (!is.list(x) || is.null(x[[k]])) return(default)
+    x <- x[[k]]
+  }
+  x <- as.character(x)
+  if (!length(x) || is.na(x[1]) || !nzchar(x[1])) default else x[1]
+}
+```
+
+# Verdict {.unnumbered}
+
+::: {.content-visible when-format="pdf"}
+```{=latex}
+\begin{verdictbox}
+```
+:::
+
+*One paragraph. State the answer to the report's question plainly, with the
+number that carries it. If the answer is no, say what is missing.*
+
+::: {.content-visible when-format="pdf"}
+```{=latex}
+\end{verdictbox}
+```
+:::
+
+# What was done
+
+*What ran, on what inputs, under what environment. Enough that a reader who has
+not followed this work can place the report.*
+
+# Findings
+
+*The substance. Every claim carries an actual number. Tables come from the
+artefact CSVs, not from numbers typed into the prose.*
+
+# Blockers
+
+*Everything that had to change to make this run, and anything that still cannot
+be run. Empty is an acceptable answer, but say so explicitly.*
+
+# Provenance {.unnumbered}
+
+```{r provenance}
+tibble::tibble(
+  Field = c("Report", "Git commit", "Branch", "Run date (UTC)",
+            "R", "Platform", "OS", "renv lockfile", "Quarto", "PDF engine"),
+  Value = c("<ID>",
+            vg("git", "commit"), vg("git", "branch"), vg("recorded_utc"),
+            vg("R", "version"), vg("R", "platform"), vg("R", "os"),
+            paste0("renv.lock (", vg("renv", "n_packages"), " packages, R ",
+                   vg("renv", "lockfile_R"), ")"),
+            vg("quarto", "version"),
+            paste0(vg("pdf_engine", "name"), " - ", vg("pdf_engine", "version")))
+) |> knitr::kable(booktabs = TRUE, linesep = "")
+```
+
+## Where every number came from {.unnumbered}
+
+*A table mapping each section of this report to the file its numbers were read
+from. No number in a D-series report is allowed to have no source.*
+
+# References {.unnumbered}
+
+::: {#refs}
+:::
