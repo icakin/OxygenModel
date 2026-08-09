@@ -1,0 +1,51 @@
+{
+  "recorded_utc": "2026-08-07 11:23:27 UTC",
+  "git": {
+    "commit": "893e6d35c40134c1fb0853a499833e659d595ae3",
+    "short_commit": "893e6d3",
+    "branch": "gyd/packaging"
+  },
+  "R": {
+    "version": "R version 4.5.2 (2025-10-31)",
+    "major": "4",
+    "minor": "5.2",
+    "platform": "aarch64-apple-darwin20",
+    "arch": "aarch64",
+    "os": "macOS Tahoe 26.2"
+  },
+  "renv": {
+    "version": "1.2.3",
+    "lockfile": "renv.lock",
+    "lockfile_R": "4.5.2",
+    "n_packages": 158
+  },
+  "cxx_toolchain": {
+    "available": true,
+    "needed_by": "scripts/12_joint_rK_estimator.R (rstan)"
+  },
+  "key_package_versions": {
+    "tidyverse": "2.0.0",
+    "readr": "2.2.0",
+    "tibble": "3.3.1",
+    "tidyr": "1.3.2",
+    "purrr": "1.2.1",
+    "dplyr": "1.2.0",
+    "ggplot2": "4.0.2",
+    "stringr": "1.6.0",
+    "scales": "1.4.0",
+    "glue": "1.8.0",
+    "zoo": "1.8-15",
+    "minpack.lm": "1.2-4",
+    "lme4": "1.1-38",
+    "lmerTest": "3.2-1",
+    "multcomp": "1.4-31",
+    "patchwork": "1.3.2",
+    "gridExtra": "2.3",
+    "ggsignif": "0.6.4",
+    "shiny": "1.13.0",
+    "rstan": "2.32.7",
+    "jsonlite": "2.0.0",
+    "rstudioapi": "0.18.0"
+  },
+  "notes": "Written by scripts/00_install.R - do not hand-edit. Stage 12 needs rstan and a C++ toolchain; run_all.sh can skip it with OXYMODEL_SKIP_STAN=1."
+}

@@ -1383,4 +1383,22 @@ server <- function(input, output, session) {
   )
 }
 
-shinyApp(ui, server)
+# ---- Launch ------------------------------------------------------------------
+# HEADLESS GUARD: this file must be source()-able in an unattended run
+# (scripts/run_all.sh sources it to prove it still parses and that its inputs
+# exist) without opening a browser or blocking. The app only starts in an
+# interactive session, or when OXYMODEL_LAUNCH_APPS=1 is set explicitly.
+.launch_app <- interactive() ||
+  identical(Sys.getenv("OXYMODEL_LAUNCH_APPS"), "1")
+
+if (.launch_app) {
+  shinyApp(ui, server)
+} else {
+  message("03_trim_selector: non-interactive session - app NOT launched.")
+  message("  Its committed outputs are treated as INPUTS to the pipeline:")
+  message("    ", out_csv)
+  message("    ", excl_csv)
+  message("  To edit them, open this file in RStudio and 'Run App', or run")
+  message("    OXYMODEL_LAUNCH_APPS=1 Rscript scripts/03_trim_selector.R")
+  invisible(NULL)
+}
