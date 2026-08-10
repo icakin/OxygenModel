@@ -87,8 +87,17 @@ Per-taxon cell dimensions and carbon content (literature-based).
 | Taxon | identifier | - | config |
 | cell_width_um, cell_length_um | cell dimensions | um | config |
 | cell_volume_um3 | cell volume from dimensions | um^3 | config |
-| carbon_density_fg_per_um3 | assumed carbon density (100 fg C um^-3, upper bound) | fg um^-3 | config |
+| carbon_density_fg_per_um3 | assumed carbon density (100 fg C um^-3; see note) | fg um^-3 | config |
 | cell_carbon_fg | per-cell carbon = volume x density | fg | 05, 06 (via `cell_carbon_of()`) |
+
+Note on the 100 fg C um^-3 conversion: this is an ASSUMED conversion factor, not a
+measured one, and it sets the absolute scale of growth carbon flux (and hence the
+CUE level, though not its thermal shape or optimum). It should not be described as
+an upper bound for cultured, exponentially growing cells: live-cell dry-mass
+density measurements of order 300 fg um^-3, combined with measured bacterial
+carbon fractions of 45-50% of dry mass, put a rich-medium heterotroph nearer
+135-150 fg C um^-3. Treat 100 as a conservative value within the published range
+and report 100 / 150 / 200 as a sensitivity where the absolute CUE level matters.
 
 ## Oxygen_Data_Filtered_CUE.csv
 Temperature-gradient oxygen series (Pseudomonas sp., 20-40 C).

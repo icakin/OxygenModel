@@ -226,7 +226,18 @@ n0_depletion <- function(FC_Final, r_per_min, t_depletion_min, fit_start_min) {
 # the values below are the GLOBAL fallback for any taxon not listed.
 CELL_WIDTH_UM             <- 0.65
 CELL_LENGTH_UM            <- 2.25
+# ASSUMED conversion, not measured. Sets the absolute scale of growth carbon flux
+# and hence the CUE level; it does NOT move the CUE optimum, the activation
+# energies, or any among-taxon ordering (those are scale-free in r and K).
+# NOT an upper bound for cultured, exponentially growing cells: live-cell dry-mass
+# density of order 300 fg um^-3 x a measured carbon fraction of 45-50% of dry mass
+# puts a rich-medium heterotroph nearer 135-150 fg C um^-3. Treat 100 as
+# conservative; use 100 / 150 / 200 as a sensitivity where the CUE LEVEL matters.
 CARBON_DENSITY_FG_PER_UM3 <- 100
+# Mass C respired per mass O2 = (12.011/31.998) * RQ. RQ = 1 is a convention, not
+# a measurement; published bacterial values span well below and above 1 depending
+# on substrate and physiological state. Lowering RQ lowers inferred respired
+# carbon and therefore RAISES inferred CUE.
 RESPIRATORY_QUOTIENT      <- 1
 
 .cell_radius_um     <- CELL_WIDTH_UM / 2
