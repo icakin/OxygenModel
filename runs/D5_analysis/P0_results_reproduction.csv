@@ -1,0 +1,32 @@
+file,byte_identical,max_abs_diff,max_rel_diff,verdict
+joint_vs_twostage_uncertainty.csv,FALSE,0.44844224321622983,0.17268078905952408,differs
+method_effects_significance.csv,FALSE,5.1624012745998815e-5,2.0662920402103222e-4,differs
+synthetic_parameter_recovery_results.csv,FALSE,5.3385819986928595e-8,1.1451366414090483e-5,differs
+Table_S2_synthetic_parameter_recovery_summary.csv,FALSE,1.2732073289764556e-8,9.086186875026423e-6,differs
+data_Fig6_RIS_COLLAPSED_centeredX.csv,FALSE,6.573199762271997e-10,5.242689245965232e-9,differs
+Fig6b_taxon_specific_slopes.csv,FALSE,7.271639956840659e-10,2.3030207920015283e-9,differs
+Fig6_taxon_specific_lines_COLLAPSED_centeredX_EXTENDED.csv,FALSE,4.73439953907473e-10,1.9998210252388078e-10,numerically identical (<=1e-9)
+method_effects_estimates.csv,FALSE,1.2601031329495527e-14,6.888212602010036e-13,numerically identical (<=1e-9)
+Oxygen_Data_Filtered.csv,FALSE,1.0658141036401503e-14,9.823333020887671e-15,numerically identical (<=1e-9)
+Oxygen_Data_Smoothed_Trimmed.csv,FALSE,1.0658141036401503e-14,9.823333020887671e-15,numerically identical (<=1e-9)
+SharpeSchoolfield_Temperature_Params_NEWformula.csv,FALSE,9.992007221626409e-15,7.752439776815147e-15,numerically identical (<=1e-9)
+Oxygen_Trimmed_Series_Metadata.csv,FALSE,1.0231815394945443e-12,3.766887923730686e-15,numerically identical (<=1e-9)
+N0_MC_ourmodel_taxon_summary_ALL.csv,FALSE,9.992007221626409e-16,3.640624156742467e-15,numerically identical (<=1e-9)
+depletion_frac_sensitivity.csv,TRUE,0,0,byte-identical
+growth_rates_combined.csv,TRUE,0,0,byte-identical
+manual_fit_windows.csv,TRUE,0,0,byte-identical
+N0_MC_ourmodel_overall_summary_ALL.csv,FALSE,0,0,numerically identical (<=1e-9)
+Oxygen_All_Long.csv,TRUE,0,0,byte-identical
+Oxygen_Curve_Code_Key.csv,TRUE,0,0,byte-identical
+oxygen_fit_curves.csv,TRUE,0,0,byte-identical
+oxygen_fit_results.csv,TRUE,0,0,byte-identical
+oxygen_model_comparison_O2_ge_0.5_summary.csv,FALSE,0,0,numerically identical (<=1e-9)
+oxygen_model_results_good_only_NEWformula.csv,TRUE,0,0,byte-identical
+oxygen_model_results_main.csv,TRUE,0,0,byte-identical
+oxygen_model_results_O2_ge_0.5.csv,TRUE,0,0,byte-identical
+oxygen_results_with_R.csv,TRUE,0,0,byte-identical
+per_curve_rK_covariance.csv,TRUE,0,0,byte-identical
+plot_exclude_points.csv,TRUE,0,0,byte-identical
+Skipped_Series_Log.csv,TRUE,0,0,byte-identical
+Table_S3_oxygen_model_comparison_O2_ge_0.5.csv,TRUE,0,0,byte-identical
+window_sensitivity_percurve.csv,TRUE,0,0,byte-identical

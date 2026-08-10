@@ -1,0 +1,6 @@
+quantity,n_curves,of_total
+curves with Ljung-Box p < 0.05 (lag 10),3,75
+curves with Ljung-Box p < 0.01 (lag 10),0,75
+curves with |rho| > 0.5,0,75
+curves with rho > 0.9 (the hypothesised regime),0,75
+curves where AR(1) GLS SE exceeds naive by >20%,0,75

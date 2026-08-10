@@ -1,0 +1,9 @@
+quantity,value
+"median corr(log r, log K), vcov",-0.9845878820966925
+"median corr(log r, log K), bootstrap iid",-0.9847026784502253
+"median corr(log r, log K), bootstrap AR(1)",-0.9848851793020119
+"median corr(log r, log K), real replicates",-0.6458081128154639
+"median var(log K - log r) / var(log r + log K), vcov",18.54295454212115
+"median var(log K - log r) / var(log r + log K), bootstrap iid",17.9950429500005
+"median var(log K - log r) / var(log r + log K), real replicates",3.0920572689668027
+bootstrap replicates per curve,300

@@ -1,0 +1,4 @@
+quantity,value
+"median corr(log r, log K) of recovery errors",-0.9765511860300676
+median var(log K - log r) / var(log r + log K),22.979216362917036
+scenarios summarised,243

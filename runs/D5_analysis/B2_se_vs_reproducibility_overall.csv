@@ -1,0 +1,11 @@
+quantity,value
+median within-curve se(log r) naive,0.0030467362729636395
+median within-curve se(log r) AR(1)-corrected,0.0029622814130030317
+median between-replicate sd(log r),0.10028699235794919
+RATIO between/within naive (log r),37.073814791684335
+RATIO between/within corrected (log r),37.64148461379
+median within-curve se(log K) naive,0.0047104081703686395
+median within-curve se(log K) AR(1)-corrected,0.004412823346404816
+median between-replicate sd(log K),0.19617057274443306
+RATIO between/within naive (log K),44.79282719435879
+RATIO between/within corrected (log K),45.725849641438884

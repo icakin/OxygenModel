@@ -1,0 +1,8 @@
+quantity,value
+median R ratio initial / depletion (matched constant),1.055572607212038
+IQR of that ratio,0.18940378129694713
+median R ratio none / depletion (matched constant),1.3298312503313192
+IQR of that ratio,0.8213517618004997
+"corr(log R, log r) under depletion",-2.3588394361171713e-4
+"corr(log R, log r) under initial",0.04184559072906026
+"corr(log R, log r) under none",-0.5365738249232535

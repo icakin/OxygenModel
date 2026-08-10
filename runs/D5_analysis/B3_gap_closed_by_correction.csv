@@ -1,0 +1,3 @@
+parameter,median_gap_naive_x,median_gap_corrected_x,median_fraction_of_gap_closed,interpretation
+log r,37.073814791684335,37.64148461379,-0.0015007633848795646,fraction of the log-scale gap removed by the AR(1) correction
+log K,44.79282719435879,45.725849641438884,-9.349271379506221e-4,fraction of the log-scale gap removed by the AR(1) correction
