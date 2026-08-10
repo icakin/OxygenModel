@@ -1,0 +1,7 @@
+check,value
+max |G - r*60*cell_carbon| / G,6.755130615053218e-16
+max |R - K*O2ref/N0 (converted)| / R,8.077956613452138e-15
+"corr(G, r) across curves",0.8000093516190018
+median dt = t_depletion - fit_start (min),124.00000000000001
+"corr(log R, log r) under the default depletion N0",-2.358839436121067e-4
+"corr(G, R) as the pipeline reports them",0.5812818809130463

@@ -1,0 +1,10 @@
+quantity,value
+"published Fig 6 slope, log_G ~ log_Rc, (1|Taxon)",0.283
+refit here with the same structure,0.26387053002092625
+implied elasticity d log R / d log G = 1/slope,3.7897373379312005
+"reverse regression log_R ~ log_Gc, (1|Taxon)",0.5629594171147349
+max elasticity possible with m >= 0,1
+mean per-cell R (fg C / cell / h),331.16763245522213
+implied maintenance m from the Fig 6 elasticity,-923.8707093746096
+implied maintenance m from the reverse regression,144.73369512096355
+maintenance m from the DIRECT linear Pirt fit (PART A),-552.6086482447112
