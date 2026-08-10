@@ -6,13 +6,15 @@
 #     Rscript scripts/00_install.R
 #
 # What it does, in order:
-#   1. Makes sure renv is available and restores the project library from
+#   1. Checks the macOS BUILD PREREQUISITES the restore needs, and says what is
+#      missing BEFORE anything is downloaded (see the block below for why).
+#   2. Makes sure renv is available and restores the project library from
 #      renv.lock (the exact package versions the analysis was run with).
-#   2. Checks that every package the pipeline actually loads can be loaded.
-#   3. Checks the C++ toolchain that stage 12 (rstan) needs in order to compile
+#   3. Checks that every package the pipeline actually loads can be loaded.
+#   4. Checks the C++ toolchain that stage 12 (rstan) needs in order to compile
 #      its Stan model. This is a WARNING, not a failure: stages 01-11 and 13 do
 #      not need a compiler, and run_all.sh can skip 12 with OXYMODEL_SKIP_STAN=1.
-#   4. Writes env/versions.json recording R, platform, renv and the git commit.
+#   5. Writes env/versions.json recording R, platform, renv and the git commit.
 #
 # It touches nothing in data/, results/ or scripts/original_scripts/.
 # =============================================================================
@@ -43,9 +45,168 @@ die <- function(title, ...) {
   stop(msg, call. = FALSE)
 }
 
-# ---- 1. renv ----------------------------------------------------------------
-step("1/4  restoring the R library from renv.lock")
+# =============================================================================
+# 0. SYSTEM PREREQUISITES  (macOS only)
+# =============================================================================
+# WHY THIS EXISTS. renv.lock pins EXACT versions. CRAN serves macOS binaries only
+# for each package's CURRENT version, so as CRAN moves on, more pinned versions
+# lose their binary and have to be compiled. Compiling needs a toolchain the
+# stock macOS image does not have, and the failure surfaces partway through a
+# long restore rather than up front. This block checks first and says what is
+# missing before anything is downloaded.
+#
+# NOTE: THIS HAS NOT BEEN CONFIRMED ON A CLEAN MACHINE. The requirements below
+# were derived from renv.lock and from a reported clean-Mac failure; no clean Mac
+# was available to test the fix. Treat the list as our best determination, not as
+# a verified recipe. See SETUP.md.
 
+is_macos <- function() Sys.info()[["sysname"]] == "Darwin"
+
+# Which pinned packages have no macOS binary AT THE PINNED VERSION, and so must
+# be compiled? Computed from the lockfile against the live CRAN binary index -
+# not hard-coded, because the answer changes as CRAN moves on.
+packages_needing_compile <- function(lockfile, project = base_dir) {
+  out <- tryCatch({
+    lock <- jsonlite::fromJSON(lockfile)$Packages
+    pinned <- vapply(lock, function(p) as.character(p$Version), character(1))
+    needs  <- vapply(lock, function(p) identical(p$NeedsCompilation, "yes"), logical(1))
+    comp   <- names(pinned)[needs]
+    ap <- utils::available.packages(type = "binary")
+    binv <- ifelse(comp %in% rownames(ap), ap[match(comp, rownames(ap)), "Version"], NA)
+    no_binary <- comp[is.na(binv) | binv != pinned[comp]]
+
+    # A package only has to be COMPILED NOW if it is not already installed at the
+    # pinned version. On a machine whose library is already synchronised the
+    # restore is a no-op and no toolchain is needed - so the check must not fail
+    # there. Only the "still to build" set drives the fatal path.
+    libs <- tryCatch(renv::paths$library(project = project), error = function(e) .libPaths())
+    still <- Filter(function(p) {
+      ip <- tryCatch(utils::packageDescription(p, lib.loc = libs)$Version,
+                     error = function(e) NA_character_)
+      is.null(ip) || is.na(ip) || !identical(as.character(ip), unname(pinned[p]))
+    }, no_binary)
+    list(no_binary = no_binary, still_to_build = still)
+  }, error = function(e) NULL)
+  out
+}
+
+check_prerequisites <- function(lockfile) {
+  if (!is_macos()) {
+    message("  not macOS - skipping the macOS prerequisite check.")
+    message("  Linux/Windows prerequisites are NOT documented here; see SETUP.md.")
+    return(invisible(NULL))
+  }
+  step("1/5  checking macOS build prerequisites")
+  missing <- character(0)
+
+  # -- Xcode command line tools ------------------------------------------------
+  clt <- suppressWarnings(system2("xcode-select", "-p", stdout = TRUE, stderr = FALSE))
+  if (!length(clt) || !nzchar(clt[1])) {
+    missing <- c(missing, paste0(
+      "Xcode command line tools (C/C++ compiler)\n",
+      "      install with:  xcode-select --install"))
+    message("  xcode CLT      MISSING")
+  } else message("  xcode CLT      ok  (", clt[1], ")")
+
+  # -- gfortran ----------------------------------------------------------------
+  # Needed by Matrix, mvtnorm and nlme among the pinned versions that must
+  # compile. CRAN-built R expects the CRAN gfortran, not Homebrew's gcc: they
+  # use different runtime paths and Homebrew's will not satisfy R's linker.
+  gf <- c(Sys.which("gfortran")[[1]], "/opt/gfortran/bin/gfortran",
+          "/usr/local/gfortran/bin/gfortran")
+  gf <- gf[nzchar(gf) & file.exists(gf)]
+  if (!length(gf)) {
+    missing <- c(missing, paste0(
+      "the CRAN gfortran toolchain (Fortran compiler)\n",
+      "      needed by: Matrix, mvtnorm, nlme\n",
+      "      download:  https://mac.r-project.org/tools/\n",
+      "      NOTE: Homebrew's gcc is NOT a substitute for CRAN-built R."))
+    message("  gfortran       MISSING")
+  } else message("  gfortran       ok  (", gf[1], ")")
+
+  # -- Homebrew system libraries ----------------------------------------------
+  # Each is named with the R package it serves, so a reader can tell why.
+  brew_needs <- list(
+    openssl  = "openssl (R package: openssl, and curl's TLS)",
+    freetype = "freetype (R packages: systemfonts, textshaping, ragg)")
+  brewbin <- Sys.which("brew")[[1]]
+  if (!nzchar(brewbin)) {
+    message("  homebrew       not found - cannot check openssl / freetype")
+    missing <- c(missing, paste0(
+      "Homebrew, to supply openssl and freetype\n",
+      "      install:   https://brew.sh\n",
+      "      then:      brew install openssl freetype"))
+  } else {
+    for (nm in names(brew_needs)) {
+      p <- suppressWarnings(system2(brewbin, c("--prefix", nm),
+                                    stdout = TRUE, stderr = FALSE))
+      if (!length(p) || !nzchar(p[1])) {
+        message("  brew ", nm, "  MISSING")
+        missing <- c(missing, paste0(brew_needs[[nm]],
+                                     "\n      install:   brew install ", nm))
+      } else message("  brew ", nm, "  ok")
+    }
+  }
+
+  # -- the conda / libkrb5 trap ------------------------------------------------
+  # Reported symptom: curl fails to build. Cause: a conda installation ahead of
+  # the system libraries on PATH supplies its own libkrb5, which the build picks
+  # up instead of the system one.
+  pth <- strsplit(Sys.getenv("PATH"), ":", fixed = TRUE)[[1]]
+  conda_first <- length(pth) && any(grepl("conda|miniforge|mamba", pth[seq_len(min(3, length(pth)))]))
+  if (conda_first || nzchar(Sys.getenv("CONDA_PREFIX"))) {
+    message("  conda          DETECTED ahead of the system path")
+    message("    A conda environment early on PATH supplies its own libkrb5, and")
+    message("    `curl` may fail to build against it. If the restore fails on curl:")
+    message("      conda deactivate            # for the duration of the restore")
+    message("    or prepend the system paths:")
+    message("      PATH=/usr/bin:/bin:/usr/sbin:/sbin:$PATH Rscript scripts/00_install.R")
+  } else message("  conda          not on PATH (good)")
+
+  # -- how much will actually have to compile? --------------------------------
+  nc <- packages_needing_compile(lockfile)
+  n_build <- NA_integer_
+  if (is.null(nc)) {
+    message("  compile scan   could not reach CRAN - skipping (assuming a build may be needed)")
+  } else {
+    n_build <- length(nc$still_to_build)
+    message("  compile scan   ", length(nc$no_binary), " pinned versions have no macOS binary;")
+    message("                 ", n_build, " of those are not yet installed and would be compiled now.")
+    if (n_build) {
+      message("                   ", paste(utils::head(sort(nc$still_to_build), 12), collapse = ", "),
+              if (n_build > 12) paste0(", ... (+", n_build - 12, " more)") else "")
+      message("                 This is expected and GROWS OVER TIME: CRAN ships binaries")
+      message("                 only for each package's CURRENT version, and renv.lock")
+      message("                 pins older ones on purpose.")
+    } else {
+      message("                 The library is already synchronised - nothing to compile.")
+    }
+  }
+
+  # Only fatal if something actually has to be built now. A machine whose library
+  # is already in sync needs no toolchain, and must not be blocked by this check.
+  if (length(missing) && !identical(n_build, 0L)) {
+    die("Missing build prerequisites - the restore would fail partway through.",
+        "",
+        paste0("  * ", missing, collapse = "\n"),
+        "",
+        "Full instructions, including the conda/libkrb5 issue:  SETUP.md",
+        "",
+        "These prerequisites were derived from renv.lock and a reported",
+        "clean-Mac failure. They have NOT been confirmed on a clean machine.")
+  }
+  if (length(missing)) {
+    message("")
+    message("  NOTE: the following are missing, but nothing needs compiling right")
+    message("  now, so the restore should still succeed. Install them before the")
+    message("  lockfile next moves ahead of CRAN's binaries:")
+    for (m in missing) message("    * ", sub("\n.*", "", m))
+    message("")
+  } else message("  all checked prerequisites present.")
+  invisible(NULL)
+}
+
+# ---- 2. renv ----------------------------------------------------------------
 if (!requireNamespace("renv", quietly = TRUE)) {
   message("  renv not found - installing it.")
   utils::install.packages("renv")
@@ -64,13 +225,44 @@ if (!file.exists(lockfile)) {
       "    git checkout renv.lock")
 }
 
+# Check the toolchain BEFORE downloading anything, so a missing compiler is
+# reported up front rather than partway into a build.
+check_prerequisites(lockfile)
+
+step("2/5  restoring the R library from renv.lock")
+
+# ---- prefer binaries on macOS ------------------------------------------------
+# THIS CHANGES HOW PACKAGES ARE OBTAINED, NEVER WHICH VERSIONS. renv::restore()
+# installs the exact versions recorded in renv.lock whatever the source; the
+# lockfile remains the pin. Setting pkgType only decides binary-vs-source for
+# those versions where both exist.
+#
+# DELIBERATE DEVIATION, stated because the brief asked for the opposite: we do
+# NOT set `install.packages.compile.from.source = "never"`. At the time of
+# writing, 35 of the 73 compiled packages in renv.lock are pinned to versions
+# CRAN no longer ships a binary for, because CRAN serves binaries only for each
+# package's CURRENT version. Forbidding source builds would make the restore
+# FAIL on those 35 rather than succeed - it would convert a slow restore into a
+# broken one. The right fix is the prerequisite check above plus the toolchain
+# instructions in SETUP.md, not a flag that refuses to build.
+#
+# Only set when the user has not chosen for themselves.
+if (is_macos() && is.null(getOption("pkgType.set.by.user"))) {
+  if (identical(getOption("pkgType"), "source")) {
+    message("  pkgType is 'source' (your setting) - leaving it alone.")
+  } else {
+    options(pkgType = "both")   # binary where one exists at the pinned version
+    message("  pkgType = 'both': binaries where available, source only where not.")
+  }
+}
+
 # Activate the project library, then restore. `prompt = FALSE` keeps it
 # non-interactive; restore is a no-op when the library already matches.
 renv::activate(project = base_dir)
 renv::restore(project = base_dir, prompt = FALSE)
 
-# ---- 2. can every package the pipeline loads actually load? -----------------
-step("2/4  checking the packages the pipeline loads")
+# ---- 3. can every package the pipeline loads actually load? -----------------
+step("3/5  checking the packages the pipeline loads")
 
 # One entry per package that a script in scripts/01..13 or config.R attaches.
 PIPELINE_PKGS <- c(
@@ -106,14 +298,14 @@ if (length(bad)) {
       "(see SETUP.md).")
 }
 
-# ---- 3. C++ toolchain for stage 12 (rstan) ----------------------------------
+# ---- 4. C++ toolchain for stage 12 (rstan) ----------------------------------
 # NOTE ON RcppParallel: the lockfile pins it to 5.1.10 ON PURPOSE. RcppParallel
 # 6.x ships a TBB release that dropped `tbb::task_scheduler_init`, which the
 # StanHeaders 2.32.x code compiled into every Stan model still calls. With 6.x
 # installed, stage 12 dies at stan_model() with
 #     symbol not found in flat namespace '__ZN3tbb19task_scheduler_init...'
 # Do not bump RcppParallel without checking that stage 12 still compiles.
-step("3/4  checking the C++ toolchain that stage 12 needs")
+step("4/5  checking the C++ toolchain that stage 12 needs")
 
 have_tools <- isTRUE(tryCatch(
   pkgbuild::has_build_tools(debug = FALSE), error = function(e) FALSE))
@@ -131,8 +323,8 @@ if (have_tools) {
   message("    OXYMODEL_SKIP_STAN=1 bash scripts/run_all.sh")
 }
 
-# ---- 4. record the environment ---------------------------------------------
-step("4/4  writing env/versions.json")
+# ---- 5. record the environment ---------------------------------------------
+step("5/5  writing env/versions.json")
 
 git_field <- function(args) {
   out <- tryCatch(

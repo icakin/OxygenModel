@@ -1,31 +1,105 @@
 # SETUP — getting this repository running on a new machine
 
-Everything below assumes a machine with **R** and **git** and nothing else.
-Verified on macOS 26.2 (Tahoe), R 4.5.2, aarch64-apple-darwin20.
+Developed on macOS 26.2 (Tahoe), R 4.5.2, aarch64-apple-darwin20.
+
+> ⚠ **The prerequisites in §1 have NOT been confirmed on a clean machine.** They
+> were derived from `renv.lock` and from a reported clean-Mac failure of
+> `renv::restore()`; no clean Mac was available to test the fix. Please treat
+> them as our best determination rather than a verified recipe, and tell us what
+> actually happens — that is the only way this gets confirmed.
 
 ---
 
 ## 1. Prerequisites
 
+### 1.1 Always needed
+
 | Tool | Minimum | Why | Install |
 |---|---|---|---|
 | **R** | 4.5.x | the entire analysis | <https://cloud.r-project.org> |
 | **git** | any | to clone, and to record provenance in `env/versions.json` | system package manager |
-| **A C++ toolchain** | any | **stage 12 only** — `rstan` compiles a Stan model | macOS: `xcode-select --install`; Linux: `build-essential`; Windows: Rtools |
 
-Stages 01–11 and 13 need no compiler. If you have none, skip stage 12 (see §4).
+### 1.2 Build toolchain — macOS
 
-On Linux you will also need the usual headers that the tidyverse / `lme4` /
-`stringi` binaries build against if CRAN has no binary for your distro:
+**Why you need this even though macOS "gets CRAN binaries".** `renv.lock` pins
+**exact** versions. CRAN ships a macOS binary only for each package's **current**
+version. So every time CRAN moves a package forward, the version we pinned loses
+its binary and has to be compiled from source. That number **grows over time**:
+at the time of writing, **35 of the 73 compiled packages in the lockfile** have
+no binary at the pinned version. (Whoever reported 14 was not wrong — they were
+looking at an earlier day.)
+
+`Rscript scripts/00_install.R` now checks all of this **before** downloading
+anything and tells you exactly what is missing and what it serves.
+
+| Requirement | Serves | Install |
+|---|---|---|
+| **Xcode command line tools** | every compiled package (C/C++) | `xcode-select --install` |
+| **CRAN gfortran toolchain** | `Matrix`, `mvtnorm`, `nlme` | <https://mac.r-project.org/tools/> |
+| **`openssl`** (Homebrew) | R package `openssl`; `curl`'s TLS | `brew install openssl` |
+| **`freetype`** (Homebrew) | `systemfonts`, `textshaping`, `ragg` | `brew install freetype` |
+
+> **Homebrew's `gcc` is NOT a substitute for the CRAN gfortran.** CRAN-built R
+> and Homebrew's compilers use different runtime library paths; R's linker will
+> not find Homebrew's `libgfortran`. Install the CRAN toolchain from the link
+> above.
+
+In one go:
 
 ```bash
-sudo apt-get install -y build-essential libcurl4-openssl-dev libssl-dev \
+xcode-select --install
+brew install openssl freetype
+# then the CRAN gfortran installer from https://mac.r-project.org/tools/
+```
+
+**`rstan` is not the problem.** It is the largest compile in the project, so it
+looks like the obvious suspect — but `rstan` 2.32.7 and `StanHeaders` 2.32.10
+are pinned at versions CRAN still ships binaries for, so they install without
+compiling. What actually has to be built is the long tail of tidyverse and
+modelling dependencies (`dplyr`, `vctrs`, `stringi`, `curl`, `openssl`, `xml2`,
+`lme4`, `Matrix`, …).
+
+### 1.3 Known issues
+
+**A conda installation makes `curl` fail to build.** If conda (or miniforge or
+mamba) is early on your `PATH`, it supplies its own `libkrb5`, and the `curl`
+build picks that up instead of the system one and fails. `00_install.R` warns
+when it detects this. Two workarounds — either:
+
+```bash
+conda deactivate           # for the duration of the restore
+Rscript scripts/00_install.R
+```
+
+or put the system libraries first for that one command:
+
+```bash
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:$PATH Rscript scripts/00_install.R
+```
+
+**The restore appears to succeed but the pipeline uses the wrong packages.** If
+`renv::restore()` fails partway and you continue anyway, R falls back to your
+**system** library and the pinning is silently defeated. Check with:
+
+```r
+renv::status()      # should say the project is in a consistent state
+.libPaths()[1]      # should be inside the project's renv/library
+```
+
+### 1.4 Linux and Windows
+
+**Out of scope and not tested here.** The Linux header list below is carried
+over from the original setup notes and has not been re-verified:
+
+```bash
+sudo apt-get install -y build-essential gfortran libcurl4-openssl-dev libssl-dev \
                         libxml2-dev libfontconfig1-dev libharfbuzz-dev \
                         libfribidi-dev libfreetype6-dev libpng-dev \
                         libtiff5-dev libjpeg-dev
 ```
 
-macOS and Windows get CRAN binaries and need none of this.
+No Windows instructions are offered rather than inventing untested ones; Rtools
+matching your R version is the starting point.
 
 ---
 
@@ -46,15 +120,28 @@ Rscript scripts/00_install.R
 
 This is **idempotent**; re-run it whenever you like. It:
 
-1. installs `renv` if needed, then `renv::restore()`s the project library from
+1. **checks the macOS build prerequisites in §1.2 BEFORE downloading anything**,
+   and stops with a message naming what is missing and what installs it — rather
+   than letting you discover it partway through a long compile. It also reports
+   how many pinned versions will actually have to be built on your machine;
+2. installs `renv` if needed, then `renv::restore()`s the project library from
    **`renv.lock`** (150 packages, pinned to exact versions, R 4.5.2);
-2. loads every package the pipeline actually uses and stops if any will not load;
-3. checks for the C++ toolchain stage 12 needs — a **warning**, not a failure;
-4. writes **`env/versions.json`** recording R, platform, `renv` and the git commit.
+3. loads every package the pipeline actually uses and stops if any will not load;
+4. checks for the C++ toolchain stage 12 needs — a **warning**, not a failure;
+5. writes **`env/versions.json`** recording R, platform, `renv` and the git commit.
 
-Expected first-run time: **5–20 min**, almost all of it downloading and (on
-Linux) compiling packages. Subsequent runs finish in **~15 s** because
-`renv::restore()` finds the library already synchronised.
+The prerequisite check only **fails** when something actually has to be compiled
+now. On a machine whose library is already synchronised it degrades to a note, so
+an existing working setup is never blocked by a missing compiler it does not need.
+
+On macOS the installer prefers **binaries** where CRAN has one at the pinned
+version, and falls back to source only where it does not. This changes **how**
+packages are obtained, never **which versions**: `renv.lock` remains the pin and
+`renv::restore()` installs exactly what it records.
+
+Expected first-run time: **20–60 min** on a clean Mac, most of it compiling the
+~35 pinned versions CRAN no longer ships binaries for. Subsequent runs finish in
+**~15 s** because `renv::restore()` finds the library already synchronised.
 
 > **Do not bump `RcppParallel` past 5.1.10.** 6.x ships a TBB release that
 > dropped `tbb::task_scheduler_init`, which the StanHeaders code compiled into
