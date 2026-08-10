@@ -122,29 +122,88 @@ check_prerequisites <- function(lockfile) {
       "      download:  https://mac.r-project.org/tools/\n",
       "      NOTE: Homebrew's gcc is NOT a substitute for CRAN-built R."))
     message("  gfortran       MISSING")
-  } else message("  gfortran       ok  (", gf[1], ")")
+  } else {
+    message("  gfortran       ok  (", gf[1], ")")
+    # Presence is NOT sufficient. R's Makeconf hardcodes the gfortran runtime
+    # library path for the version R was BUILT against; the current installer
+    # at mac.r-project.org/tools ships a newer one (e.g. 14.2.0 where Makeconf
+    # expects 12.2.0). The compiler then runs fine and the LINK step fails with
+    #   ld: library 'gfortran' not found
+    # after the Fortran objects have already been built. Check the paths R will
+    # actually hand the linker, rather than the compiler's existence.
+    # ~/.R/Makevars overrides Makeconf, so an override there is the effective
+    # setting and must be read FIRST; otherwise a machine already fixed this
+    # way is reported broken.
+    usr_mk <- path.expand("~/.R/Makevars")
+    fl <- character(0); src <- ""
+    if (file.exists(usr_mk)) {
+      fl  <- grep("^\\s*FLIBS\\s*=", readLines(usr_mk, warn = FALSE), value = TRUE)
+      src <- "~/.R/Makevars"
+    }
+    if (!length(fl)) {
+      mkconf <- file.path(R.home("etc"), "Makeconf")
+      if (file.exists(mkconf)) {
+        fl  <- grep("^\\s*FLIBS\\s*=", readLines(mkconf, warn = FALSE), value = TRUE)
+        src <- "R's Makeconf"
+      }
+    }
+    if (length(fl)) {
+      lpaths <- regmatches(fl[1], gregexpr("(?<=-L)[^ ]+", fl[1], perl = TRUE))[[1]]
+      bad    <- lpaths[nzchar(lpaths) & !dir.exists(lpaths)]
+      if (length(bad)) {
+        have <- Sys.glob("/opt/gfortran/lib/gcc/*/*")
+        message("  gfortran libs  MISSING  (FLIBS path in ", src, " does not exist)")
+        missing <- c(missing, paste0(
+          "a gfortran runtime path that R expects but which is not present\n",
+          "      FLIBS in ", src, " refers to:  ", paste(bad, collapse = ", "), "\n",
+          if (length(have))
+            paste0("      installed on this machine:  ", paste(have, collapse = ", "), "\n")
+          else "",
+          "      The compiler exists, so a presence check passes, but the LINK step\n",
+          "      fails. Fix by overriding FLIBS in ~/.R/Makevars (single line):\n",
+          "        FLIBS = -L", if (length(have)) have[1] else "<installed path>",
+          " -L/opt/gfortran/lib -lgfortran -lemutls_w -lquadmath"))
+      } else {
+        message("  gfortran libs  ok  (FLIBS paths in ", src, " resolve)")
+      }
+    }
+  }
 
   # -- Homebrew system libraries ----------------------------------------------
   # Each is named with the R package it serves, so a reader can tell why.
+  # The graphics libraries form a dependency CHAIN:
+  #   freetype -> systemfonts -> textshaping -> ragg -> tidyverse
+  # so a missing webp header ultimately takes out tidyverse four levels up,
+  # and each one only reveals the next if they are installed one at a time.
+  # Verified empirically on a clean macOS arm64 machine (see SETUP.md).
+  brew_all <- c("pkg-config", "openssl", "freetype", "harfbuzz", "fribidi",
+                "libtiff", "jpeg-turbo", "webp")
   brew_needs <- list(
-    openssl  = "openssl (R package: openssl, and curl's TLS)",
-    freetype = "freetype (R packages: systemfonts, textshaping, ragg)")
+    "pkg-config" = "pkg-config (used to locate every library below)",
+    openssl      = "openssl (R packages: openssl, curl's TLS)",
+    freetype     = "freetype (R package: systemfonts)",
+    harfbuzz     = "harfbuzz (R package: textshaping)",
+    fribidi      = "fribidi (R package: textshaping)",
+    libtiff      = "libtiff (R package: ragg)",
+    "jpeg-turbo" = "jpeg-turbo (R package: ragg)",
+    webp         = "webp (R package: ragg)")
   brewbin <- Sys.which("brew")[[1]]
   if (!nzchar(brewbin)) {
-    message("  homebrew       not found - cannot check openssl / freetype")
+    message("  homebrew       not found - cannot check system libraries")
     missing <- c(missing, paste0(
-      "Homebrew, to supply openssl and freetype\n",
+      "Homebrew, to supply the C libraries the graphics stack needs\n",
       "      install:   https://brew.sh\n",
-      "      then:      brew install openssl freetype"))
+      "      then:      brew install ", paste(brew_all, collapse = " ")))
   } else {
     for (nm in names(brew_needs)) {
       p <- suppressWarnings(system2(brewbin, c("--prefix", nm),
                                     stdout = TRUE, stderr = FALSE))
+      lab <- formatC(nm, width = 11, flag = "-")
       if (!length(p) || !nzchar(p[1])) {
-        message("  brew ", nm, "  MISSING")
+        message("  brew ", lab, "MISSING")
         missing <- c(missing, paste0(brew_needs[[nm]],
                                      "\n      install:   brew install ", nm))
-      } else message("  brew ", nm, "  ok")
+      } else message("  brew ", lab, "ok")
     }
   }
 
