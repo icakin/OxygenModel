@@ -1,0 +1,8 @@
+quantity,value
+"R^2, all saturation measures -> max|dR_pct|",0.16796246870227663
+adjusted R^2,0.09454739241130106
+model p-value,0.04527540804341966
+"R^2, window length alone -> max|dR_pct|",5.25340173894723e-4
+median max|dK_pct| across curves,15.426285407637543
+median max|dR_pct| across curves,2.226653272149065
+median max|dr_pct| across curves,0.327076596899704

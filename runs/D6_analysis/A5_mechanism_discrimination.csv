@@ -1,0 +1,5 @@
+predictor,mechanism,corr_with_late_mean_resid,corr_with_curvature
+min absolute O2 reached (mg/L),O2 limitation,0.13974161637261379,0.1113049489037308
+fraction of O2 remaining at window end,O2 limitation,0.14255299890870765,0.11069706329077543
+elapsed growth r*t at window end,growth saturation,-0.012323684574339471,-0.2221005014040461
+N-fold increase at window end,growth saturation,8.52004949575367e-4,-0.22559783160158067

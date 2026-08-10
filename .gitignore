@@ -37,6 +37,7 @@ runs/D1_baseline/*
 !runs/D1_baseline/comparisons/
 !runs/D2_analysis/
 !runs/D5_analysis/
+!runs/D6_analysis/
 # ...and within those, text tables only - never figures or model objects.
 runs/**/*.rds
 runs/**/*.tiff

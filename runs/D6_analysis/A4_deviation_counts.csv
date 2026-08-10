@@ -1,0 +1,8 @@
+test,n_curves,of_total
+"nested F-test vs growth saturation, p < 0.05",3,75
+"nested F-test vs growth saturation, p < 0.01",1,75
+"nested F-test vs O2 limitation, p < 0.05",3,75
+"nested F-test vs O2 limitation, p < 0.01",0,75
+|late-window mean residual| > 0.5 sd,0,75
+|late-window mean residual| > 1.0 sd,0,75
+window ends below 20% of starting O2,7,75
