@@ -1,23 +1,23 @@
 {
-  "recorded_utc": "2026-08-07 11:23:27 UTC",
+  "recorded_utc": "2026-08-10 22:03:07 UTC",
   "git": {
-    "commit": "893e6d35c40134c1fb0853a499833e659d595ae3",
-    "short_commit": "893e6d3",
-    "branch": "gyd/packaging"
+    "commit": "cfb29b0a1a040a30a84b25f603ec88672b1dfb14",
+    "short_commit": "cfb29b0",
+    "branch": "main"
   },
   "R": {
-    "version": "R version 4.5.2 (2025-10-31)",
+    "version": "R version 4.4.2 (2024-10-31)",
     "major": "4",
-    "minor": "5.2",
+    "minor": "4.2",
     "platform": "aarch64-apple-darwin20",
     "arch": "aarch64",
-    "os": "macOS Tahoe 26.2"
+    "os": "macOS Sequoia 15.1"
   },
   "renv": {
     "version": "1.2.3",
     "lockfile": "renv.lock",
     "lockfile_R": "4.5.2",
-    "n_packages": 158
+    "n_packages": 150
   },
   "cxx_toolchain": {
     "available": true,
