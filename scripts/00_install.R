@@ -46,6 +46,57 @@ die <- function(title, ...) {
 }
 
 # =============================================================================
+# R VERSION vs renv.lock  -  checked FIRST, before anything is downloaded
+# =============================================================================
+# The cheapest check there is, and the only failure no toolchain can repair. If
+# R is a minor version BEHIND the lock, a fair number of pinned packages carry
+# `Depends: R (>= <lock minor>.0)` and refuse to install. renv installs
+# everything that CAN build, then aborts, and because it only links a restore
+# into the project library once the WHOLE transaction succeeds, the library is
+# left empty and the later package check reports every package missing. Failing
+# here turns that confusing cascade into one line.
+
+local({
+  lock <- file.path(base_dir, "renv.lock")
+  if (!file.exists(lock)) return(invisible(NULL))
+  lock_r <- tryCatch({
+    j <- readLines(lock, warn = FALSE)
+    i <- grep('"Version"', j)[1]
+    sub('.*"Version"\\s*:\\s*"([^"]+)".*', "\\1", j[i])
+  }, error = function(e) NA_character_)
+  if (is.na(lock_r)) return(invisible(NULL))
+
+  have <- getRversion(); want <- package_version(lock_r)
+  same_minor <- identical(unlist(want)[1:2], unlist(have)[1:2])
+  # die() joins its arguments with newlines, one per line, so every line below
+  # must be a SINGLE fully-assembled string. And getRversion() returns an
+  # R_system_version, which c() flattens to "c(4, 4, 2)" - hence as.character().
+  hv <- as.character(have)
+  wm <- paste(unlist(want)[1:2], collapse = ".")
+
+  if (identical(hv, lock_r)) {
+    message("00_install: R ", hv, " matches renv.lock")
+  } else if (!same_minor && have < want) {
+    die(paste0("R ", hv, " is older than the pinned R ", lock_r),
+        paste0("renv.lock was solved under R ", lock_r, ". Several pinned packages declare"),
+        paste0("Depends: R (>= ", wm, ".0) and will refuse to install on R ", hv, "."),
+        "This is not a missing system library, and no compiler flag fixes it.",
+        "",
+        paste0("  fix: install R ", lock_r, " from"),
+        "       https://cran.r-project.org/bin/macosx/",
+        "",
+        paste0("Installing R ", wm, " does not remove your existing R ", hv, ". The Candidas"),
+        "project pins the same R version, so one install serves both repositories.",
+        "Then re-run this script; already-downloaded packages are in the renv",
+        "cache, so the retry is fast.")
+  } else {
+    message("00_install: [warn] renv.lock was solved under R ", lock_r,
+            "; you are on ", hv, ". Restore will proceed, but pinned binaries",
+            " may be rebuilt from source and exact reproduction is not guaranteed.")
+  }
+})
+
+# =============================================================================
 # 0. SYSTEM PREREQUISITES  (macOS only)
 # =============================================================================
 # WHY THIS EXISTS. renv.lock pins EXACT versions. CRAN serves macOS binaries only
