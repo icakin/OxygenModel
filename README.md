@@ -84,12 +84,19 @@ The temperature analysis (11) and the joint estimator (12) are run separately.
 - `10_simulation_recovery.R` synthetic parameter recovery (Fig S2)
 - `11_temperature_cue.R`   temperature-gradient growth / respiration / CUE (Fig 7); uses `data/Oxygen_Data_Filtered_CUE.csv`
 - `12_joint_rK_estimator.R` joint hierarchical fit propagating the within-curve r–K covariance (requires a working `rstan` / Stan toolchain)
+- `13_depletion_frac_sensitivity.R` robustness of per-cell R to the O₂-depletion threshold that anchors N0
+- `14_heldout_and_oxygen_per_cell.R` two carbon-free checks: held-out extrapolation past the fit window, and oxygen per new cell (ΔO₂/ΔN against R/r)
+
+Run separately, not part of `run_all.R`:
+
+- `00_install.R`           restore the pinned environment and verify system prerequisites (run this first on a new machine)
+- `regenerate_ninoc.R`     rebuild `data/Ninoc.csv` in code from the depletion-anchored N0
 
 ## Key data inputs (`data/`)
 
 - `Oxygen_Data_Long.csv`         raw O₂ series (`Taxon, Replicate, Time, Oxygen`)
 - `OD_r_FC_r.csv`                per-replicate OD and flow-cytometry counts (`FC_Initial`, `FC_Final`); drives the depletion-anchored N0 and the growth validation
-- `taxon_cell_sizes.csv`         per-taxon cell volume → carbon (100 fg C µm⁻³)
+- `taxon_cell_sizes.csv`         per-taxon cell volume → carbon (100 fg C µm⁻³; an assumed conversion, not an upper bound — see `config.R` and `data/README.md`)
 - `Cell_Counts.csv`              per-taxon mean of the at-inoculation counts
 - `Ninoc.csv`                    per-replicate inoculation densities (used only by the `initial` N0 fallback)
 - `Oxygen_Data_Filtered_CUE.csv` temperature-gradient O₂ series (Pseudomonas)
