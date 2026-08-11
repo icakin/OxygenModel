@@ -273,6 +273,35 @@ check_prerequisites <- function(lockfile) {
     message("      PATH=/usr/bin:/bin:/usr/sbin:/sbin:$PATH Rscript scripts/00_install.R")
   } else message("  conda          not on PATH (good)")
 
+  # -- gettext headers (libintl.h), needed by data.table ----------------------
+  # data.table's src/po.h includes <libintl.h> with no fallback. CRAN's macOS
+  # builders keep gettext in /opt/R/<arch>, which is why R's Makeconf already
+  # puts -I/opt/R/<arch>/include on every compile line and why the CRAN binary
+  # builds - but that directory is empty on a user machine unless populated on
+  # purpose. Source-installing data.table then dies with
+  #     ./po.h:2:10: fatal error: 'libintl.h' file not found
+  # and takes dtplyr and tidyverse down with it. Homebrew's gettext is keg-only
+  # and is NOT on the include path, so `brew install gettext` does not fix it.
+  intl_dirs <- c("/opt/R/arm64/include", "/opt/R/x86_64/include",
+                 "/opt/homebrew/opt/gettext/include", "/usr/local/opt/gettext/include",
+                 "/opt/homebrew/include", "/usr/local/include")
+  intl_hit <- intl_dirs[file.exists(file.path(intl_dirs, "libintl.h"))]
+  if (length(intl_hit)) {
+    message("  libintl.h      ok  (", intl_hit[1], ")")
+  } else {
+    arch    <- if (identical(R.version$arch, "aarch64")) "arm64" else "x86_64"
+    tarball <- if (arch == "arm64") "gettext-0.21-darwin.20-arm64.tar.gz"
+               else                 "gettext-0.21-darwin.17-x86_64.tar.gz"
+    message("  libintl.h      MISSING")
+    missing <- c(missing, paste0(
+      "gettext headers (libintl.h), needed to compile data.table\n",
+      "      without them data.table fails, and dtplyr and tidyverse fail with it\n",
+      "      install CRAN's own build into /opt/R/", arch, ", which R already searches:\n",
+      "        curl -fO https://mac.R-project.org/libs-", arch, "/", tarball, "\n",
+      "        sudo tar fvxz ", tarball, " -C /\n",
+      "      NOTE: Homebrew's gettext is keg-only and will NOT be found."))
+  }
+
   # -- how much will actually have to compile? --------------------------------
   nc <- packages_needing_compile(lockfile)
   n_build <- NA_integer_
